@@ -2,6 +2,16 @@ import argparse
 
 VERSION = "1.0"
 
+
+
+#add an object to close the writer
+
+
+#add an error handler object to fix certain functions
+
+
+
+
 #passing arguments into functions and then returning a value 
 
 def fdedup(args):
