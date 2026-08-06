@@ -1,6 +1,6 @@
 import argparse
 
-version = "1.0"
+VERSION = "1.0"
 
 #passing arguments into functions and then returning a value 
 
@@ -48,6 +48,7 @@ def main(argv:None):
     dedup = commparse.add_parser("dedup",parents=[fileparse], help= "removes all duplicates")
     dedup.set_defaults(func=fdedup)
     sortd = commparse.add_parser("sort", parents=[fileparse], help= "sorts all data by column name")
+    sortd.add_argument("--by", default="NDC Description",help = "select the column in which you want to sort the column by, default is by description")
     sortd.set_defaults(func=fsorted)
     #add default as name
 
@@ -57,6 +58,7 @@ def main(argv:None):
     retcol.set_defaults(func=fretcol)
 
     clean = commparse.add_parser("clean", parents=[fileparse],help= "cleans data by dedup then sort, mocked up by dryrun value")
+    clean.add_argument("--by", default="NDC Description", help= "defaulted to by description")
     clean.set_defaults(func=fclean)
 
 
