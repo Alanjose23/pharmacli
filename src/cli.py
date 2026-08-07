@@ -1,13 +1,29 @@
 import argparse
+import sys
 
 VERSION = "1.0"
 
 
 
 #add an object to close the writer
+def outfile(path: str | None):
+
+    if path is None:
+        yield sys.stdout
+    else:
+        handle = open(path, "w", newline = "", encoding = "utf-8")
+
+        try:
+            yield handle
+        finally:
+            handle.close()
+
+
 
 
 #add an error handler object to fix certain functions
+def errr(message: str) -> None:
+    print(message, file = sys.stderr)
 
 
 
