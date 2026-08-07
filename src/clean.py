@@ -1,11 +1,10 @@
 #clean method for looking up the amount of dupes and looking at the amount of deleted rows from medicine rows
 
 
-from dataclasses import dataclass, astuple
 import csv
-import datetime from datetime
+from dataclasses import astuple, dataclass
+from datetime import datetime
 from operator import attrgetter
-
 
 #references for measurement and copying to another file
 # tried to use readerdict, but some values were consumed
@@ -32,7 +31,7 @@ SORTCOLUMN = {
     "date":"date_value"
 }
 
-deduped = {"row", 'ndc description', "ndc+date"}
+deduped = {"row", 'ndc', "ndc+date"}
 
 DATEFORMATS = ("%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y")
 
@@ -58,30 +57,42 @@ class Medicine:
     gdate: str
     asdate: str
 
+@property
+def price_value(self) -> float:
+    try:
+        return float(self.price)
+    except ValueError:
+        return float("inf")
+
+@property
+def date_value(self) -> datetime:
+    for fmt in DATEFORMATS:
+        try:
+            return datetime.strptime(self.edate, fmt)
+        except ValueError:
+             continue
+        return UNPARSEABLE_DATE
+
 
 
 #storing duplicate and throwaway items
 @dataclass
 class dupes:
     line: int
-    errortype: str
+    reason: str
 
 
 
 #reader/iterator function
 def readrows(path: str):
-    with open(path, newline="", encoding = "utf-8-sig",errors="replace") as filin:
+    with open(path, newline="", encoding="utf-8-sig", errors="replace") as filin:
         reader = csv.reader(filin)
-        #pass in csv file into reader object
 
-        header = next(reader)
-        #if file has heading skip
+        
         try:
-            next.reader()
-            
+            next(reader)
         except StopIteration:
             return
-
 
         firstcol = COLUMNS[0].casefold()
  
@@ -189,7 +200,8 @@ def sorter(medicine, by: str = "description") -> tuple[Medicine, ...]:
 # writer object
 def writer(medicine, stream) -> int:
 
-    writer = csv.writer(stream, lineterminator= "/n")
+    writer = csv.writer(stream, lineterminator= "\n")
+    #lineterminator needed for consuming other newer lines
     writer.writerow(COLUMNS)
 
     for record in medicine:

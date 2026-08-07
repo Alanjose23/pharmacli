@@ -1,6 +1,6 @@
 import argparse
+import os
 import sys
-import warnings
 from contextlib import contextmanager
 
 import clean
@@ -77,7 +77,7 @@ def writing(medicine,args) -> int:
             written = clean.writer(medicine,stream)
 
     except BrokenPipeError:
-        raise
+        raise os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
     # having trouble but this would catch the other error that was cloggin the exception
     except Exception as e:
         errr(f"error: cannot write to {outpath}: {e}")
@@ -92,7 +92,7 @@ def writing(medicine,args) -> int:
 def fdedup(args) -> int:
     medicine = report(args)
     if medicine is None:
-            return 1
+        return 1
     dedupret, reported = clean.dedup(medicine, key= args.key)
     errr(f"dedup done: removed${reported} duplicate rows")
     
