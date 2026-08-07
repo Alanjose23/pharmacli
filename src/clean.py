@@ -1,5 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, astuple
 import csv
+from operator import attrgetter
 
 
 #references for measurement and copying to another file
@@ -84,18 +85,32 @@ def readrows(path: str):
             #formatted string change needed change val 2 to price as it is a float
                 
 
+# removed and changed the tuple to organize into skipped and recorded lists
+def orgrec(path:str) -> tuple[tuple[Medicine,...],tuple[dupes,...]]:
+    records: list[Medicine] = []
+    skipped: list[dupes] = []
+
+    # return tuples to be put into two categories cab and noncab
+    for row in readrows(path):
+        if isinstance(row,Medicine):
+            records.append()
+        else:
+            skipped.append()
+    return tuple(records), tuple(skipped)
 
 
-
-
-
-#tuple addtion and conversion
+#count duplicated lines using dedup
 
 
 
 
 
 #sorter object
+def sorter(records, by: str = "description") -> tuple[Medicine, ...]
+    if by not in SORTCOLUMN:
+        raise ValueError("Unnknown sort column, please use another value to sort by")
+    # used attrgetter to sort items by selected column value
+    return tuple(sorted(records, key=attrgetter(SORTCOLUMN[by])))
 
 
 
@@ -109,7 +124,7 @@ def writer(records, stream) -> int:
 
     for record in records:
         print(record)
-        # writer.writerow(astuple(record))
+        writer.writerow(astuple(record))
 
     return len(records)
 
