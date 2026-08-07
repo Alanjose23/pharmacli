@@ -1,13 +1,15 @@
 import argparse
 from contextlib import contextmanager
 import sys
+import clean
+import warnings
 
 VERSION = "1.0"
 
 
 
 #add an object to close the writer
-@contextmanager
+@contextmanager ###
 def outfile(path: str | None):
 
     if path is None:
@@ -27,6 +29,35 @@ def outfile(path: str | None):
 def errr(message: str) -> None:
     print(message, file = sys.stderr)
 
+
+
+#command steps for dry run
+def report(args) -> tuple[clean.Medicine, ...]:
+
+    try:
+        medicine, dupes = clean.readrows(args.input)
+
+    except FileNotFoundError:
+        #warnings module needed to not impede program
+        warnings.warn("No file found, try again")
+
+
+    warnings.warn(f"understood {len(medicine)} rows and ignored {len(dupes)} rows")
+
+    for item in dupes[:5]:
+        warnings.warm(f"item {item.line}skipped for {item.reason}")
+
+    if not medicine:
+        warnings.warn("no usable rows found")
+
+
+#writing rows and results of dry run
+
+def writing(medicine,args) -> int:
+    outpath = args.outfile
+
+    if args.dryrun:
+        warnings.warn(f"The output file would have {len(medicine)} records to {outpath}" )
 
 
 
