@@ -1,4 +1,5 @@
 import argparse
+from contextlib import contextmanager
 import sys
 
 VERSION = "1.0"
@@ -6,6 +7,7 @@ VERSION = "1.0"
 
 
 #add an object to close the writer
+@contextmanager
 def outfile(path: str | None):
 
     if path is None:
