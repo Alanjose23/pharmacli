@@ -3,6 +3,7 @@
 
 from dataclasses import dataclass, astuple
 import csv
+import datetime from datetime
 from operator import attrgetter
 
 
@@ -17,7 +18,7 @@ COLUMNS = [
     "Pricing Unit",
     "Pharmacy Type Indicator",
     "OTC",
-    "Explaination Code",
+    "Explanation Code",
     "Classification for Rate Setting",
     "Corresponding Generic Drug NADAC Per Unit",
     "Corresponding Generic Drug Effective Date",
@@ -27,17 +28,22 @@ COLUMNS = [
 SORTCOLUMN = {
     "description": "description",
     "ndc":"ndc",
-    "price":"price",
-    "date":"effective date"
+    "price":"price_value",
+    "date":"date_value"
 }
 
-deduped = {"row", 'ndc description'}
+deduped = {"row", 'ndc description', "ndc+date"}
+
+DATEFORMATS = ("%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y")
+
+UNPARSEABLE_DATE = datetime.max
+
 
 
 
 # adding one valid row from CSV to  Medicine dataclass
 
-@dataclass
+@dataclass(frozen=True)
 class Medicine:
     description: str
     ndc: str
@@ -64,54 +70,62 @@ class dupes:
 
 #reader/iterator function
 def readrows(path: str):
-    with open(path, newline="", encoding = "utf-8") as filin:
+    with open(path, newline="", encoding = "utf-8-sig",errors="replace") as filin:
         reader = csv.reader(filin)
         #pass in csv file into reader object
 
         header = next(reader)
         #if file has heading skip
         try:
-            val = next.reader()
-            print(val)
+            next.reader()
+            
         except StopIteration:
             return
 
 
-        while True:
-            try:
-                val = next(reader)
-            except StopIteration:
-                break
-
-            #store value
-
+        firstcol = COLUMNS[0].casefold()
+ 
+        
+        for val in reader:
+            
             ln = reader.line_num
-            #create a function that would catalogue read data and organize into results
-
-
+ 
+           
             if not any(item.strip() for item in val):
-                yield dupes(ln, "line is returned as blank")
+                yield dupes(ln, "blank line")
                 continue
-
-
+ 
+            
             if len(val) != len(COLUMNS):
-                yield dupes(ln, "items in the dataset are not matched up with the class")
+                yield dupes(ln, f"expected {len(COLUMNS)} fields, found {len(val)}")
                 continue
-
+ 
+            
             stval = [item.strip() for item in val]
-
-            if stval[0] == COLUMNS[0]:
-                yield dupes(ln, "repeated header")
-
-            if not stval[0] and not stval[1]:
+ 
+           
+            if stval[0].casefold() == firstcol:
+                yield dupes(ln, "repeated header row")
+                continue
+ 
+         
+            if not stval[1]:
                 yield dupes(ln, "missing NDC")
                 continue
-
-            if not stval[1]:
+ 
+            if not stval[0]:
                 yield dupes(ln, "missing description")
                 continue
-
-            yield Medicine(val[0], val[1], val[2],val[3],val[4], val[5], val[6], val[7], val[8], val[9], val[10],val[11])
+ 
+           
+            try:
+                float(stval[2])
+            except ValueError:
+                yield dupes(ln, f"price is not a number: {stval[2]!r}")
+                continue
+ 
+            
+            yield Medicine(*stval)
             #formatted string change needed change val 2 to price as it is a float
 
            
@@ -125,9 +139,9 @@ def orgrec(path:str) -> tuple[tuple[Medicine,...],tuple[dupes,...]]:
     # return tuples to be put into two categories cab and noncab
     for row in readrows(path):
         if isinstance(row,Medicine):
-            medicine.append()
+            medicine.append(row)
         else:
-            skipped.append()
+            skipped.append(row)
     return tuple(medicine), tuple(skipped)
 
 
@@ -138,17 +152,17 @@ def dedup(medicine, key:str = "row") -> tuple[tuple[Medicine,...], int]:
         raise ValueError("unkown key used, please use ndc or description")
 
     if key == "row":
-        nondupe = tuple(dict.fromkeys(medicine))
+        kept = tuple(dict.fromkeys(medicine))
 
     else:
-        val1 = attrgetter("ndc") if key == "ndc" else attrgetter("ndc", "effective_date")
+        val1 = attrgetter("ndc") if key == "ndc" else attrgetter("ndc", "edate")
         seen: set = set()
         out = []
         for meds in medicine:
             mark = val1(meds)
             if mark not in seen:
                 seen.add(mark)
-                out.append(medicine)
+                out.append(meds)
 
         kept = tuple(out)
 
@@ -162,7 +176,7 @@ def dedup(medicine, key:str = "row") -> tuple[tuple[Medicine,...], int]:
 
 
 #sorter object
-def sorter(medicine, by: str = "description") -> tuple[Medicine, ...]
+def sorter(medicine, by: str = "description") -> tuple[Medicine, ...]:
     if by not in SORTCOLUMN:
         raise ValueError("Unnknown sort column, please use another value to sort by")
     # used attrgetter to sort items by selected column value
@@ -175,11 +189,11 @@ def sorter(medicine, by: str = "description") -> tuple[Medicine, ...]
 # writer object
 def writer(medicine, stream) -> int:
 
-    writer = csv.writer(stream)
+    writer = csv.writer(stream, lineterminator= "/n")
     writer.writerow(COLUMNS)
 
     for record in medicine:
-        print(record)
+        
         writer.writerow(astuple(record))
 
     return len(medicine)

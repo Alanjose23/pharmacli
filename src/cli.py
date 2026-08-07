@@ -8,6 +8,8 @@ import clean
 VERSION = "1.0"
 
 
+SKIPPED = 10
+
 
 #add an object to close the writer
 @contextmanager ###
@@ -28,7 +30,7 @@ def outfile(path: str | None):
 
 #add an error handler object to fix certain functions
 def errr(message: str) -> None:
-    print(message, file = sys.stderr)
+    print(message, file=sys.stderr)
 
 
 
@@ -39,19 +41,26 @@ def report(args) -> tuple[clean.Medicine, ...] | None:
         medicine, dupes = clean.orgrec(args.input)
 
     except Exception as e:
-        #warnings module needed to not impede program
-        warnings.warn(f"Errors: {e}")
+        #warnings module replaced with custom error call
+        errr(f"error: cannot read input file: {e}")
+        return None
 
 
 
-    warnings.warn(f"understood {len(medicine)} rows and ignored {len(dupes)} rows")
+    errr(f"understood {len(medicine)} rows and ignored {len(dupes)} rows")
 
-    for item in dupes[:5]:
-        warnings.warm(f"item {item.line}skipped for {item.reason}")
+    for item in dupes[:SKIPPED]:
+        errr(f"  line {item.line}: {item.reason}")
+
+    if len(dupes) > SKIPPED:
+        errr(f" and {len(dupes) - SKIPPED} more skipped rows")
+    
 
     if not medicine:
-        warnings.warn("no usable rows found")
+        errr("error: no usable rows found")
         return None
+
+    return medicine
 
 
 #writing rows and results of dry run
@@ -60,17 +69,20 @@ def writing(medicine,args) -> int:
     outpath = args.outfile or "stdout"
 
     if args.dryrun:
-        warnings.warn(f"The output file would have {len(medicine)} records to {outpath}" )
+        errr(f"dry run: would write {len(medicine)} rows to {outpath}")
         return 0
 
     try:
         with outfile(args.outfile) as stream:
             written = clean.writer(medicine,stream)
 
+    except BrokenPipeError:
+        raise
+    # having trouble but this would catch the other error that was cloggin the exception
     except Exception as e:
-        warnings.warn(f"Errors: {e}")
+        errr(f"error: cannot write to {outpath}: {e}")
         return 1
-    warnings.warn(f"{written} rows written to {outpath}")
+    errr(f"{written} rows written to {outpath}")
     return 0
 
 
@@ -82,6 +94,7 @@ def fdedup(args) -> int:
     if medicine is None:
             return 1
     dedupret, reported = clean.dedup(medicine, key= args.key)
+    errr(f"dedup done: removed${reported} duplicate rows")
     
     return writing(dedupret, args)
 
@@ -97,6 +110,7 @@ def fclean(args) -> int:
     if medicine is None:
         return 1
     deduped, reported = clean.dedup(medicine, key = args.key)
+    errr(f"dedup done: removed${reported} duplicate rows")
     return writing(clean.sorter(deduped, by= args.by),args)
    
 
@@ -144,12 +158,11 @@ def main(argv: list [str] | None = None) -> int:
     #add default as name
 
     retcol = commparse.add_parser("col", help= "return columns") 
-    #no parents needed instead infile needs to be added
-    retcol.add_argument("input", help="path to intro csv")
+    #no parents needed returning just the columns 
     retcol.set_defaults(func=fretcol)
 
     pclean = commparse.add_parser("clean", parents=[fileparse],help= "cleans data by dedup then sort, mocked up by dryrun value")
-    pclean.add_argument("--by", default="row",choices=dedup_k)
+    pclean.add_argument("--key", default="row",choices=dedup_k)
     pclean.add_argument("--by", default="description",choices=sort_k, help= "defaulted to by description")
     pclean.set_defaults(func=fclean)
 
@@ -161,7 +174,7 @@ def main(argv: list [str] | None = None) -> int:
         return args.func(args)
         #each function has its own exit code and that allows it to run safely
     except Exception as e:
-        warnings.warn(f"Errors: {e}")
+        errr(f"error: {e}")
         return 1
 
     
