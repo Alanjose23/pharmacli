@@ -59,25 +59,45 @@ def writing(medicine,args) -> int:
     if args.dryrun:
         warnings.warn(f"The output file would have {len(medicine)} records to {outpath}" )
 
+    try:
+        with outfile(args.outfile) as stream:
+            written = clean.writer(medicine,stream)
+
+    except Exception as e:
+        warnings.warn(f"Errors: {e}")
+        return 1
+    warnings.warn(f"{written} rows written to {outpath}")
+
+    return 0
+
 
 
 #passing arguments into functions and then returning a value 
 
-def fdedup(args):
-    print(args)
-    return 0
+def fdedup(args) -> int:
+    medicine = report(args)
+    if medicine is None:
+            return 1
+    dedupret, reported = clean.deduped(medicine, key= args.key)
+    
+    return writing(dedupret, args)
 
 def fretcol(args):
+    for i, row in enumerate(clean.COLUMNS, start=1):
+        print(f"{i}. {row}")
+    
+    return 0
+
+def fclean(args) -> int:
     print(args)
     return 0
 
-def fclean(args):
-    print(args)
-    return 0
-
-def fsorted(args):
-    print(args)
-    return 0
+def fsorted(args) -> int:
+    medicine = report(args)
+    if medicine is None:
+        return 1
+    return writing(clean.sorter(medicine, by= args.by),args)
+    
 
 
 
