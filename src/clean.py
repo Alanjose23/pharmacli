@@ -1,3 +1,6 @@
+#clean method for looking up the amount of dupes and looking at the amount of deleted rows from medicine rows
+
+
 from dataclasses import dataclass, astuple
 import csv
 from operator import attrgetter
@@ -38,7 +41,7 @@ deduped = {"row", 'ndc description'}
 class Medicine:
     description: str
     ndc: str
-    price: float
+    price: str
     edate: str
     punit: str
     phtype: str
@@ -79,54 +82,107 @@ def readrows(path: str):
                 val = next(reader)
             except StopIteration:
                 break
+
+            #store value
+
+            ln = reader.line_num
             #create a function that would catalogue read data and organize into results
+
+
+            if not any(item.strip() for item in val):
+                yield dupes(ln, "line is returned as blank")
+                continue
+
+
+            if len(val) != len(COLUMNS):
+                yield dupes(ln, "items in the dataset are not matched up with the class")
+                continue
+
+            stval = [item.strip() for item in val]
+
+            if stval[0] == COLUMNS[0]:
+                yield dupes(ln, "repeated header")
+
+            if not stval[0] and not stval[1]:
+                yield dupes(ln, "missing NDC")
+                continue
+
+            if not stval[1]:
+                yield dupes(ln, "missing description")
+                continue
 
             yield Medicine(val[0], val[1], val[2],val[3],val[4], val[5], val[6], val[7], val[8], val[9], val[10],val[11])
             #formatted string change needed change val 2 to price as it is a float
+
+           
                 
 
 # removed and changed the tuple to organize into skipped and recorded lists
 def orgrec(path:str) -> tuple[tuple[Medicine,...],tuple[dupes,...]]:
-    records: list[Medicine] = []
+    medicine: list[Medicine] = []
     skipped: list[dupes] = []
 
     # return tuples to be put into two categories cab and noncab
     for row in readrows(path):
         if isinstance(row,Medicine):
-            records.append()
+            medicine.append()
         else:
             skipped.append()
-    return tuple(records), tuple(skipped)
+    return tuple(medicine), tuple(skipped)
 
 
 #count duplicated lines using dedup
+def dedup(medicine, key:str = "row") -> tuple[tuple[Medicine,...], int]:
+
+    if key not in deduped:
+        raise ValueError("unkown key used, please use ndc or description")
+
+    if key == "row":
+        nondupe = tuple(dict.fromkeys(medicine))
+
+    else:
+        val1 = attrgetter("ndc") if key == "ndc" else attrgetter("ndc", "effective_date")
+        seen: set = set()
+        out = []
+        for meds in medicine:
+            mark = val1(meds)
+            if mark not in seen:
+                seen.add(mark)
+                out.append(medicine)
+
+        kept = tuple(out)
+
+    numdupes = len(medicine) - len(kept)
+
+    return kept,numdupes 
+    
 
 
 
 
 
 #sorter object
-def sorter(records, by: str = "description") -> tuple[Medicine, ...]
+def sorter(medicine, by: str = "description") -> tuple[Medicine, ...]
     if by not in SORTCOLUMN:
         raise ValueError("Unnknown sort column, please use another value to sort by")
     # used attrgetter to sort items by selected column value
-    return tuple(sorted(records, key=attrgetter(SORTCOLUMN[by])))
+    return tuple(sorted(medicine, key=attrgetter(SORTCOLUMN[by])))
 
 
 
 
 
 # writer object
-def writer(records, stream) -> int:
+def writer(medicine, stream) -> int:
 
     writer = csv.writer(stream)
     writer.writerow(COLUMNS)
 
-    for record in records:
+    for record in medicine:
         print(record)
         writer.writerow(astuple(record))
 
-    return len(records)
+    return len(medicine)
 
 
 
