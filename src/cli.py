@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import argparse
 import os
 import sys
@@ -77,7 +79,8 @@ def writing(medicine,args) -> int:
             written = clean.writer(medicine,stream)
 
     except BrokenPipeError:
-        raise os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        sys.exit(0)
     # having trouble but this would catch the other error that was cloggin the exception
     except Exception as e:
         errr(f"error: cannot write to {outpath}: {e}")

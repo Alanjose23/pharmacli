@@ -57,21 +57,21 @@ class Medicine:
     gdate: str
     asdate: str
 
-@property
-def price_value(self) -> float:
-    try:
-        return float(self.price)
-    except ValueError:
-        return float("inf")
-
-@property
-def date_value(self) -> datetime:
-    for fmt in DATEFORMATS:
+    @property
+    def price_value(self) -> float:
         try:
-            return datetime.strptime(self.edate, fmt)
+            return float(self.price)
         except ValueError:
-             continue
-        return UNPARSEABLE_DATE
+            return float("inf")
+
+    @property
+    def date_value(self) -> datetime:
+        for fmt in DATEFORMATS:
+            try:
+                return datetime.strptime(self.edate, fmt)
+            except ValueError:
+                continue
+            return UNPARSEABLE_DATE
 
 
 
