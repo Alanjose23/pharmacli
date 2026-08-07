@@ -1,7 +1,9 @@
 from dataclasses import dataclass
+import csv
 
 
 #references for measurement and copying to another file
+# tried to use readerdict, but some values were consumed
 
 COLUMNS = [
     "NDC Description",
@@ -57,6 +59,32 @@ class dupes:
 
 
 #reader/iterator function
+def readrows(path: str):
+    with open(path, newline="", encoding = "utf-8") as filin:
+        reader = csv.reader(filin)
+        #pass in csv file into reader object
+
+        header = next(reader)
+        #if file has heading skip
+        try:
+            val = next.reader()
+            print(val)
+        except StopIteration:
+            return
+
+
+        while True:
+            try:
+                val = next(reader)
+            except StopIteration:
+                break
+            #create a function that would catalogue read data and organize into results
+
+            yield Medicine(val[0], val[1], val[2],val[3],val[4], val[5], val[6], val[7], val[8], val[9], val[10],val[11])
+            #formatted string change needed change val 2 to price as it is a float
+                
+
+
 
 
 
@@ -74,7 +102,16 @@ class dupes:
 
 
 # writer object
+def writer(records, stream) -> int:
 
+    writer = csv.writer(stream)
+    writer.writerow(COLUMNS)
+
+    for record in records:
+        print(record)
+        # writer.writerow(astuple(record))
+
+    return len(records)
 
 
 
