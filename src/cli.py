@@ -10,10 +10,10 @@ import clean
 VERSION = "1.0"
 
 
-SKIPPED = 30
+SKIPPED = 1000
 
 
-#add an object to close the writer
+#add an context manager function to close the writer
 @contextmanager
 def outfile(path: str | None):
 
@@ -30,7 +30,7 @@ def outfile(path: str | None):
 
 
 
-#add an error handler object to fix certain functions
+#add an error handler object to fix certain functions and report to terminal
 def errr(message: str) -> None:
     print(message, file=sys.stderr)
 
