@@ -1,5 +1,5 @@
 # pharmacli
-    This is a pharmacy CLI tool that allows for sorting, deduplication, and data cleaning of a CSV resource file. The operations below allow the insertion of a file that is then parsed using argparse. The tools also allow you to organize and sort by different columns 
+This is a pharmacy CLI tool that allows for sorting, deduplication, and data cleaning of a CSV resource file. The operations below allow the insertion of a file that is then parsed using argparse. The tools also allow you to organize and sort by different columns 
 
 ## how to run
     * git clone
