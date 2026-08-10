@@ -1,17 +1,18 @@
-# pharmacli
+# PharmaCLI Tool
+
 This is a pharmacy CLI tool that allows for sorting, deduplication, and data cleaning of a CSV resource file. The operations below allow the insertion of a file that is then parsed using argparse. The tools also allow you to organize and sort by different columns 
 
 ## how to run
     * git clone
     * start python virtual env in your root directory
-    * parse medical data by inputing in the commands
+    * parse medical data by inputing in the commands as formatted
 
 ### command structure 
     - file is made into executable using chmod+x
-    ./src/cli.py COMMAND1 pathtofile.csv (--key (row OR ndc)) (--by description OR date OR price OR ndc) -o pathtooutput.csv
+    ./src/cli.py COMMAND1 pathtofile.csv (--key (row OR ndc)) (--by (description OR date OR price OR ndc)) -o pathtooutput.csv
 
-    COMMAND1*(command2)
-        - dedup (row, ndc, and ndc date)
+    COMMAND1
+        - dedup (row, ndc, and ndc+date)
         - sort (description, price)
         - col
         - clean (description, price)
