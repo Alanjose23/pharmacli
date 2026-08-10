@@ -10,11 +10,11 @@ import clean
 VERSION = "1.0"
 
 
-SKIPPED = 10
+SKIPPED = 30
 
 
 #add an object to close the writer
-@contextmanager ###
+@contextmanager
 def outfile(path: str | None):
 
     if path is None:
@@ -113,7 +113,7 @@ def fclean(args) -> int:
     if medicine is None:
         return 1
     deduped, reported = clean.dedup(medicine, key = args.key)
-    errr(f"dedup done: removed${reported} duplicate rows")
+    errr(f"clean done: removed${reported} duplicate rows")
     return writing(clean.sorter(deduped, by= args.by),args)
    
 
