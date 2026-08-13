@@ -11,6 +11,8 @@ from models.rows import RawRow, SkippedRow
 # interpret date formats
 DATES = Final[tuple[str,...]] = ("%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y")
 
+OTCVALS: Final[frozenset[str]] = frozenset({"y","yes","true", "1", "otc"})
+# values for conversion to boolean
 def parsedate(raw: str) -> date | None:
     text = raw.strip()
     if not text:
@@ -43,10 +45,36 @@ def parseprice(raw: str) -> float | None:
         return None
 
 
+# otc conversion format
+def parseotc(raw: str) -> bool:
+    return raw.strip().lower() in OTCVALS
+
 # define a drug format as NDC and description
+@dataclass(frozen=True, slots=True)
+class Drug: 
+    ndc: str
+    description: str
+
+
+@dataclass(frozen=True, slots=True)
+class Price: 
+    unitprice: float
+    unit: str
+    expirydate: str | None
+
+
 
 # redefine the medicine
-
+@dataclass(frozen=True, slots=True)
+class Medicine: 
+    drug: Drug
+    price: Price
+    pharmacytype: str
+    otc: bool
+    explanation: str
+    rateclass: str
+    generic: Price | None
+    asofdate:date | None
 
 #build medicine from row and line num
 
