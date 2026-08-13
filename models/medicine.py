@@ -76,7 +76,87 @@ class Medicine:
     generic: Price | None
     asofdate:date | None
 
-#build medicine from row and line num
+
+    @classmethod #build medicine from row and line num
+    def arow(cls, row: RawRow, lint:int) -> "Medicine | SkippedRow":
+    #define rows as validated or skipped
+        ndc = row["NDC"].strip()
+        desc = row["NDC Description"].strip()
+        rprice = row["NADAC Per Unit"]. strip()
+        dateeff = parsedate(row["Effective Date"])
+        asofd = parsedate(row["As of Date"])
+        otc = parseotc(row["OTC"])
+        genrow = row["Corresponding Generic Drug NADAC Per Unit"].strip()
+        trueprice = parseprice(rprice)
+
+
+        
 
 # define missing exceptions
+        if not ndc:
+            return SkippedRow(lint, "Missing NDC")
+        if not desc:
+            return SkippedRow(lint, "Missing Description")
 
+        
+        if trueprice is None:
+            return SkippedRow(lint, "Price is not found")
+
+
+        genprice = Price | None
+        if genprice is not None:
+            gendate = parsedate(row["Corresponding Generic Drug Effective Date"])
+            generic = Price (unitprice=genprice, unit= row['Pricing Unit'].strip(), expirydate=gendate)
+        else:
+            generic = None
+
+
+        drug = Drug(ndc = ndc, description= desc)
+        price = Price(unitprice=trueprice, unit=row['Pricing Unit'].strip(), expirydate=dateeff)
+
+        return cls(
+            drug= drug,
+            price = price,
+            pharmtype = row['Pharmacy Type Indicator'].strip(),
+            otc=otc,
+            explcode = row['Explanation Code'].strip(),
+            rateset = row['Classification for Rate Setting'],
+            generic = generic,
+            asofd=asofd
+        )
+
+    def torow(self) -> list[str]:
+        return[
+            self.drug.description,
+            self.drug.ndc,
+            f"$ {self.price.unit}",
+            self.formatdate(self.price.expirydate),
+            self.price.unit,
+            self.pharmacytype,
+            "Y" if self.otc else "N",
+            self.explanation,
+            self.rateclass,
+            f"{self.generic.unitprice}" if self.generic else "",
+            self.formatdate(self.generic.expirydate) if self.generic else "",
+            self.formatdate(self.asofdate)
+
+
+
+        ]
+
+    @staticmethod
+    def formatdate(value: date | None) -> str:
+        return value.isoformat() if value is not None else ""
+
+    @property
+    def sortprice(self) -> float:
+        return self.price.unitprice
+
+    @property
+    def sort_date(self) -> tuple[bool,date]:
+
+        if self.price.expirydate is None:
+            return (True, date.min)
+        return (False, self.price.expirydate)
+
+        
