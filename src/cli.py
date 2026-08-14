@@ -86,15 +86,112 @@ def buildparse() -> argparse.ArgumentParser:
     commands.add_parser("columns", help="list the expected columns")
 
     return parser
-    
+
 
 # obtain arguments from command line grammar
     # return rules, columns, or parse report with input line
     # display common error faults( no file found and lines detected
+    
+def cmdrules() -> int:
+    for name, summ in RULES.describeall():
+        print(f"{name: <16} {summ}")
+    return EXIT_OK
 
-    # add and init rules with request
-        # create a configured instance
-    # display rule set and if there is a bad rule:reject
+def cmdcol() -> int:
+    for pos, col in enumerate(COLUMNS, start=1):
+        print(f"{pos:>2}. {col}")
+    return EXIT_OK
+
+
+# add and init rules with request
+    # create a configured instance
+# display rule set and if there is a bad rule:reject
+def buildrule(args: argparse.Namespace) -> list[Rule] | None:
+
+
+    if args.command == "dedup":
+        return RULES.create("dedup", key=args.key)
+
+    if args.command == "sort":
+        return RULES.create("sort", key=args.by)
+
+    built: list[Rule] = []
+    for raw in args.rule:
+        try:
+            name, options = parserule(raw)
+            built.append(RULES.create(name, **options))
+        except (RuleError, TypeError) as exc:
+            warn(f"error: {exc}")
+            return None
+        return built
+
+def dispatch(args: argparse.Namespace) -> int:
+    if args.command == "dedup":
+        return cmdrules
+    
+    if args.command == "sort":
+        return cmdcol
+
+    try:
+        report = CSVR(args.input).read()
+    except PharmaError as exc:
+        warn(f"error: {exc}")
+        return EXIT_BADIN
+
+    warn(f"understood: {len(report.records)} items and skipped {len(report.skipped)}")
+    for row in report.skipped[:MAX_SKIPPED]:
+        warn(row)
+
+
+    if not report.records:
+        warn("No more usable rows found")
+        return EXIT_NOROWS
+
+    rules = buildrule(args)
+    if rules is None:
+        return EXIT_BADRULE
+
+    clean = Cleaner(tuple(rules)).run(report.records)
+
+    for name, removed in clean.per_rule:
+        warn(f"{name} : rows removed : {removed}")
+    for note in clean.notes:
+        warn(note)
+
+    outpath = args.outfile or "stdout"
+    if args.dryrun:
+        warn(f"dry run results: could write {len(clean.records)} rows to {outpath}")
+        return EXIT_OK
+
+    try:
+        with open_output(args.outfile) as stream:
+            written = CSVW(stream).write(clean.records)
+    except OSError as exc:
+        warn("Cannot be written to outpath")
+        return EXIT_BADIN
+
+    warn(f"{written} rows to {outpath}")
+    return EXIT_OK
+
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = buildparse()
+    args = parser.parse_args(argv)
+
+
+    try:
+        return dispatch(args)
+    except BrokenPipeError:
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        return EXIT_OK
+
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+
 
     # dryrun, rule handling, output file recongnition, and possible errors
     # return success code
