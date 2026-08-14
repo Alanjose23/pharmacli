@@ -20,6 +20,7 @@ class CleanReport:
 
 
 
+@dataclass
 class Cleaner:
     #holding an ordered set of rules that feeds records
 

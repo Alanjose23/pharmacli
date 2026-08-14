@@ -109,10 +109,10 @@ def buildrule(args: argparse.Namespace) -> list[Rule] | None:
 
 
     if args.command == "dedup":
-        return RULES.create("dedup", key=args.key)
+        return [RULES.create("dedup", key=args.key)]
 
     if args.command == "sort":
-        return RULES.create("sort", key=args.by)
+        return [RULES.create("sort", by=args.by)]
 
     built: list[Rule] = []
     for raw in args.rule:
@@ -126,10 +126,10 @@ def buildrule(args: argparse.Namespace) -> list[Rule] | None:
 
 def dispatch(args: argparse.Namespace) -> int:
     if args.command == "rules":
-        return cmdrules
+        return cmdrules()
     
     if args.command == "columns":
-        return cmdcol
+        return cmdcol()
 
     try:
         report = CSVR(args.input).read()

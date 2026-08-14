@@ -11,7 +11,7 @@ from pharmacli.registry import RULES
 COLUMNS: Final[dict[str,str]] = {
     "description": "drug.description",
     "ndc": "drug.ndc",
-    "price": "sort_price",
+    "price": "sortprice",
     "date": "sort_date"
 }
 

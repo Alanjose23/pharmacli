@@ -17,6 +17,7 @@ from pharmacli.protocols import BaseRule, Rule, RuleRes
 from pharmacli.reader import CSVR, ParseReport
 from pharmacli.registry import RULES, Registry
 from pharmacli.writer import CSVW
+from pharmacli import rules  # noqa: F401  # import last so every rule registers
 
 __version__ = "2.0"
 

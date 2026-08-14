@@ -4,7 +4,7 @@ This is a pharmacy CLI tool that allows for sorting, deduplication, and data cle
 
 ## how to run
     * git clone
-    * start python virtual env in your root directory
+    * start python virtual env in your root directory (pip install -e .)
     * parse medical data by inputing in the commands as formatted
 
 ### command structure 

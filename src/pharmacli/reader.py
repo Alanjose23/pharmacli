@@ -10,6 +10,7 @@ from models.rows import COLUMNS, RawRow, SkippedRow
 
 
 
+@dataclass
 class ParseReport:
     records: tuple[Medicine,  ...]
     skipped: tuple[SkippedRow, ...]
@@ -30,15 +31,16 @@ class CSVR:
 
     def read(self) -> ParseReport:
         try:
-            stream = open(self.path, newline="", encoding="utf-8-sig")
+            # undecodable bytes become U+FFFD instead of raising, so one bad
+            # row does not take down the whole file; caught per-row below
+            stream = open(self.path, newline="", encoding="utf-8-sig", errors="replace")
         except OSError as exc:
             raise InputError(self.path,str(exc)) from exc
 
         with stream:
             reader = csv.reader(stream)
 
-
-            try: 
+            try:
                 header = next(reader)
 
             except StopIteration:
@@ -46,16 +48,16 @@ class CSVR:
 
             found = tuple(cell.strip() for cell in header)
             if found != COLUMNS:
-                raise headermismatch(self.path, COLUMNS,found)
+                raise HeaderMismatch(self.path, COLUMNS,found)
 
             firstcol = COLUMNS[0].casefold()
             records: list[Medicine] = []
             skipped: list[SkippedRow] = []
 
 
-             #init medicines and skipped rows 
+             #init medicines and skipped rows
             # append reasonings as well
-            for raw in reader: 
+            for raw in reader:
                 line = reader.line_num
 
                 if not any(cell.strip() for cell in raw):
@@ -64,6 +66,11 @@ class CSVR:
 
                 if len(raw) != len(COLUMNS):
                     skipped.append(SkippedRow(line, "expected columns did not match found columns"))
+                    continue
+
+                if any("�" in cell for cell in raw):
+                    skipped.append(SkippedRow(line, "invalid encoding (undecodable bytes)"))
+                    continue
 
                 par = [cell.strip() for cell in raw]
                 # if medicine is outcome put to accepted then append otherwise skip []
@@ -79,7 +86,7 @@ class CSVR:
                 if isinstance(out, Medicine):
                     records.append(out)
 
-                else: 
+                else:
                     skipped.append(out)
 
         # return a parse report

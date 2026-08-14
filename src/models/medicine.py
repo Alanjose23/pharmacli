@@ -103,7 +103,7 @@ class Medicine:
             return SkippedRow(lint, "Price is not found")
 
 
-        genprice = Price | None
+        genprice = parseprice(genrow)
         if genprice is not None:
             gendate = parsedate(row["Corresponding Generic Drug Effective Date"])
             generic = Price (unitprice=genprice, unit= row['Pricing Unit'].strip(), expirydate=gendate)
@@ -117,19 +117,19 @@ class Medicine:
         return cls(
             drug= drug,
             price = price,
-            pharmtype = row['Pharmacy Type Indicator'].strip(),
+            pharmacytype = row['Pharmacy Type Indicator'].strip(),
             otc=otc,
-            explcode = row['Explanation Code'].strip(),
-            rateset = row['Classification for Rate Setting'],
+            explanation = row['Explanation Code'].strip(),
+            rateclass = row['Classification for Rate Setting'].strip(),
             generic = generic,
-            asofd=asofd
+            asofdate=asofd
         )
 
     def torow(self) -> list[str]:
         return[
             self.drug.description,
             self.drug.ndc,
-            f"$ {self.price.unit}",
+            f"{self.price.unitprice}",
             self.formatdate(self.price.expirydate),
             self.price.unit,
             self.pharmacytype,

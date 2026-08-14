@@ -12,7 +12,7 @@ class InputError(PharmaError):
     def __init__(self, path: Path, reason:str) -> None:
         self.path = path
         self.reason = reason
-        super().__init__("Cannot be read")
+        super().__init__(reason)
 
     # define column mismatch
 class HeaderMismatch(InputError):
