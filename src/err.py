@@ -15,7 +15,7 @@ class InputError(PharmaError):
         super().__init__("Cannot be read")
 
     # define column mismatch
-class headermismatch(InputError):
+class HeaderMismatch(InputError):
     def __init__ (self,path:Path, expected: tuple[str,...], found: tuple[str,...]) -> None:
         self.expected = expected
         self.found = found

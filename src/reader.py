@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from .err import headermismatch, InputError
+from .err import HeaderMismatch, InputError
 from ..models.medicine import Medicine
 from ..models.rows import COLUMNS, RawRow, SkippedRow
 
@@ -70,6 +70,7 @@ class CSVR:
 
                 if par[0].casefold()  == firstcol:
                     skipped.append(SkippedRow(line, "skipped header row"))
+                    continue
 
                 row = cast(RawRow, dict(zip(COLUMNS, par)))
                 out = Medicine.arow(row, line)

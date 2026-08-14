@@ -2,7 +2,7 @@ from collections.abc import Callable
 from difflib import get_close_matches
 from typing import Any, Generic, TypeVar
 
-from err import DuplicateRuleError, UnknownRuleError
+from .err import DuplicateRuleError, UnknownRuleError
 
 from .protocols import Rule
 

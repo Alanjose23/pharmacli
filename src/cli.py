@@ -64,7 +64,7 @@ def buildparse() -> argparse.ArgumentParser:
     fileopts = argparse.ArgumentParser(add_help=False)
     fileopts.add_argument("input", type = Path, help = "path to input CSV")
     fileopts.add_argument("-o", "--outfile", type=Path, default=None, help="write to here instead of stdout")
-    fileopts.add_argument("-n", "-dryrun", action='store_true', help = "report only, write nothing")
+    fileopts.add_argument("-n", "--dryrun", action='store_true', help = "report only, write nothing")
 
 
 
@@ -129,7 +129,7 @@ def dispatch(args: argparse.Namespace) -> int:
     if args.command == "rules":
         return cmdrules
     
-    if args.command == "sort":
+    if args.command == "columns":
         return cmdcol
 
     try:
