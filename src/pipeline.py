@@ -28,7 +28,7 @@ class Cleaner:
 
     def run(self, records: Sequence[Medicine]) -> CleanReport:
         working: tuple[Medicine, ...] = tuple(records)
-        per_rule = list[tuple[str, int]] = []
+        per_rule : list[tuple[str, int]] = []
         notes: list[str] = []
         # append items and create an actual report that can be usable
         for rule in self.rules:

@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 class PharmaError(Exception):
-
+    pass
     
 # input error : path and reason
 class InputError(PharmaError):
@@ -26,7 +26,7 @@ class headermismatch(InputError):
 # rule errors
     # define a rule error
 class RuleError(PharmaError):
-
+    pass
 
 
 # unknown rule error

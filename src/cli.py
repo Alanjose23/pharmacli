@@ -43,7 +43,7 @@ def parserule(raw: str) -> tuple[str, dict[str,str]]:
 
     name, _, optiontext = raw.partition(":")
     options: dict[str, str] = {}
-    for setting in optiontext.split(",")
+    for setting in optiontext.split(","):
         if "=" not in setting:
             raise RuleError(f"expected 'key=value' in rule options,got {setting!r}")
         key, _, value = setting.partition("=")
@@ -123,10 +123,10 @@ def buildrule(args: argparse.Namespace) -> list[Rule] | None:
         except (RuleError, TypeError) as exc:
             warn(f"error: {exc}")
             return None
-        return built
+    return built
 
 def dispatch(args: argparse.Namespace) -> int:
-    if args.command == "dedup":
+    if args.command == "rules":
         return cmdrules
     
     if args.command == "sort":

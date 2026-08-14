@@ -24,7 +24,7 @@ class DedupRule(BaseRule):
     def apply(self, records: Sequence[Medicine]) -> RuleRes:
         if self.key == "row":
 
-            kept: tuple [Medicine, ...] = tuple[dict.fromkeys(records)]
+            kept: tuple[Medicine, ...] = tuple(dict.fromkeys(records))
 
         else:
 

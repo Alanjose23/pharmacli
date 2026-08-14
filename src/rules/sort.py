@@ -24,7 +24,7 @@ class SortRules(BaseRule):
     name: ClassVar[str] = "sort"
 
     def __init__(self, by:str="description" ) -> None:
-        if by not in COLUMNS
+        if by not in COLUMNS:
             raise RuleError(f"unknown column, select from {COLUMNS}")
         self.by = by
 

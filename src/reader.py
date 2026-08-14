@@ -28,7 +28,7 @@ class CSVR:
         self.path = path
 
 
-    def read(self) -> ParseReport
+    def read(self) -> ParseReport:
         try:
             stream = open(self.path, newline="", encoding="utf-8-sig")
         except OSError as exc:
@@ -39,7 +39,7 @@ class CSVR:
 
 
             try: 
-                header = next(header)
+                header = next(reader)
 
             except StopIteration:
                 return ParseReport(records=(),skipped= ())
