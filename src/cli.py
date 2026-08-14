@@ -15,30 +15,78 @@ from .reader import CSVR
 from .registry import RULES
 from .writer import CSVW
 
+
+VERSION: Final[str] = "2.0.0"
+MAX_SKIPPED: Final[int] = 50
 # entry point of code
 
 #exit code definition
     # 0 = success
+EXIT_OK: Final[int] = 0
     # 1 = no usable rows
+EXIT_NOROWS: Final[int] = 1
     # 2 for bad input
+EXIT_BADIN: Final[int] = 2
     # 3 for bad rule
+EXIT_BADRULE: Final[int] = 3
 
 
 # display errors
+def warn(message: object) -> None:
+    print(message, file= sys.stderr)
 
 # rule recongition
+def parserule(raw: str) -> tuple[str, dict[str,str]]:
+
+    if ":" not in raw:
+        return raw, {}
+
+    name, _, optiontext = raw.partition(":")
+    options: dict[str, str] = {}
+    for setting in optiontext.split(",")
+        if "=" not in setting:
+            raise RuleError(f"expected 'key=value' in rule options,got {setting!r}")
+        key, _, value = setting.partition("=")
+        options[key.strip()] = value.strip()
+    return name.strip(), options
     # define a rule and its identifying key
     # handle rule misdiagnosis and representation
     # add errors to definition
 
 # build command line parser
+def buildparse() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog= "PharmaCLI", description= "CLI tool for parsing inventory CSVs", epilog= "use -n/ --dryrun to see what would change without writing",)
+    parser.add_argument("-v","--version", action = "version", version = f"PharmaCLI {VERSION}")
+
     # define output input and dryrun tags
+        
+    
+    fileopts = argparse.ArgumentParser(add_help=False)
+    fileopts.add_argument("input", type = Path, help = "path to input CSV")
+    fileopts.add_argument("-o", "--outfile", type=Path, default=None, help="write to here instead of stdout")
+    fileopts.add_argument("-n", "-dryrun", action='store_true', help = "report only, write nothing")
+
+
+
+    commands = parser.add_subparsers(dest="command", required= True, metavar="COMMAND")
     # add new rules command
+    clean = commands.add_parser("clean", parents=[fileopts], help="run one or more rules")
+    clean.add_argument("--rule", action="append", default=[], metavar="NAME[:KEY=VALUE, ...]", help="repeatable; avaliable {', '.join(RULES.names())}")
 
-# list rules and 
 
-# list columns 
+    dedup = commands.add_parser("dedup", parents=[fileopts], help= "remove dupes")
+    dedup.add_argument("--key", default= "row", choices= ('row', 'ndc', 'ndc+date'), help = "what makes the rows duplicates")
+    sortd = commands.add_parser("sort", parents=[fileopts], help= "sorts all data by column name")
+    sortd.add_argument("--by", default="description",choices = {'description', 'ndc', 'price', 'date'},help = "select the column in which you want to sort the column by, default is by description")
 
+    # list rules and 
+
+    # list columns 
+    commands.add_parser("rules", help="list every registry approved tool")
+    commands.add_parser("columns", help="list the expected columns")
+
+    return parser
+    
 
 # obtain arguments from command line grammar
     # return rules, columns, or parse report with input line
