@@ -24,6 +24,8 @@ class Registry(Generic[T]):
         return decorate
 
     #class registered under the name 
+    # typed commands into working objects 
+    # new rule creation
     def get(self, name: str) -> type[T]:
         if name not in self._items:
             clse = get_close_matches(name, self._items.keys(), n=1)
@@ -52,5 +54,3 @@ class Registry(Generic[T]):
 RULES: Registry[Rule] = Registry()
 # shared rule registry for CLI py access
 
-# typed commands into working objects 
-# new rule creation

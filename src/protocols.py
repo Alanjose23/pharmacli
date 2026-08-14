@@ -1,4 +1,4 @@
-# between file and terminal closes file 
+# rule creation using an abstract method 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -34,7 +34,4 @@ class BaseRule(ABC):
         doc = (self.__doc__ or "").strip()
         fl = doc.splitlines()[0] if doc else ""
         return f"{self.name}: {fl}"
-# open output destination from path
-    # standard previous format
-
-# close file
+#
