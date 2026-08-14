@@ -2,13 +2,10 @@ from collections.abc import Sequence
 from operator import attrgetter
 from typing import ClassVar, Final
 
-
 from ..err import RuleError
-from ...models.medicine import Medicine
+from ..models.medicine import Medicine
 from ..protocols import BaseRule, RuleRes
 from ..registry import RULES
-
-
 
 # define sortable columns(description, ndc, price, and date)
 COLUMNS: Final[dict[str,str]] = {

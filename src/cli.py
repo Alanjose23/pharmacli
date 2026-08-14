@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from typing import Final
 
-from ..models.rows import COLUMNS
+from .models.rows import COLUMNS
 
 # import reader,writer, registry, pipeline, registry, models, errors
 from .err import PharmaError, RuleError

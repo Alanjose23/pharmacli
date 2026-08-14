@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from operator import attrgetter
 from typing import ClassVar, Literal
 
-from ...models.medicine import Medicine
+from ..models.medicine import Medicine
 from ..protocols import BaseRule, RuleRes
 from ..registry import RULES
 

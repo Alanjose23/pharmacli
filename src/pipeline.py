@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
-from ..models.medicine import Medicine
+from .models.medicine import Medicine
 from .protocols import Rule
 
 

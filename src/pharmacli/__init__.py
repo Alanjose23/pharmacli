@@ -1,8 +1,6 @@
 # set every input in pharma module 
     # import rules last(so every rule registers first)
 
-from ...models.medicine import Drug, Medicine, Price, parsedate
-from ...models.rows import COLUMNS, RawRow, SkippedRow
 from ..err import (
     DuplicateRuleError,
     HeaderMismatch,
@@ -11,6 +9,8 @@ from ..err import (
     RuleError,
     UnknownRuleError,
 )
+from ..models.medicine import Drug, Medicine, Price, parsedate
+from ..models.rows import COLUMNS, RawRow, SkippedRow
 from ..output import open_output
 from ..pipeline import Cleaner, CleanReport
 from ..protocols import BaseRule, Rule, RuleRes
@@ -29,7 +29,7 @@ __all__ = [  # noqa: RUF022
     "CSVW",
     "Drug",
     "DuplicateRuleError",
-    "headermismatch",
+    "HeaderMismatch",
     "InputError",
     "Medicine",
     "ParseReport",
