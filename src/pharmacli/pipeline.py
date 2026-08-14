@@ -3,8 +3,8 @@
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
-from .models.medicine import Medicine
-from .protocols import Rule
+from models.medicine import Medicine
+from pharmacli.protocols import Rule
 
 
 @dataclass

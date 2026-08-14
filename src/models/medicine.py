@@ -9,7 +9,7 @@ from models.rows import RawRow, SkippedRow
 
 
 # interpret date formats
-DATES = Final[tuple[str,...]] = ("%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y")
+DATES: Final[tuple[str,...]] = ("%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y")
 
 OTCVALS: Final[frozenset[str]] = frozenset({"y","yes","true", "1", "otc"})
 # values for conversion to boolean

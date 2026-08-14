@@ -2,9 +2,9 @@ from collections.abc import Callable
 from difflib import get_close_matches
 from typing import Any, Generic, TypeVar
 
-from .err import DuplicateRuleError, UnknownRuleError
+from pharmacli.err import DuplicateRuleError, UnknownRuleError
 
-from .protocols import Rule
+from pharmacli.protocols import Rule
 
 T = TypeVar('T')
 

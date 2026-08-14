@@ -4,9 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from .err import HeaderMismatch, InputError
-from .models.medicine import Medicine
-from .models.rows import COLUMNS, RawRow, SkippedRow
+from pharmacli.err import HeaderMismatch, InputError
+from models.medicine import Medicine
+from models.rows import COLUMNS, RawRow, SkippedRow
 
 
 

@@ -1,5 +1,5 @@
-from medicine import DATES, Drug, Medicine, Price, parsedate
-from rows import COLUMNS, RawRow, SkippedRow
+from .medicine import DATES, Drug, Medicine, Price, parsedate
+from .rows import COLUMNS, RawRow, SkippedRow
 
 PharmaD= [
     "COLUMNS",

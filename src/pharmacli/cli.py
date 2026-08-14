@@ -4,17 +4,16 @@ import sys
 from pathlib import Path
 from typing import Final
 
-from .models.rows import COLUMNS
+from models.rows import COLUMNS
 
 # import reader,writer, registry, pipeline, registry, models, errors
-from .err import PharmaError, RuleError
-from .output import open_output
-from .pipeline import Cleaner
-from .protocols import Rule
-from .reader import CSVR
-from .registry import RULES
-from .writer import CSVW
-
+from pharmacli.err import PharmaError, RuleError
+from pharmacli.output import open_output
+from pharmacli.pipeline import Cleaner
+from pharmacli.protocols import Rule
+from pharmacli.reader import CSVR
+from pharmacli.registry import RULES
+from pharmacli.writer import CSVW
 
 VERSION: Final[str] = "2.0.0"
 MAX_SKIPPED: Final[int] = 50

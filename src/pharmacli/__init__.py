@@ -1,7 +1,7 @@
 # set every input in pharma module 
     # import rules last(so every rule registers first)
 
-from ..err import (
+from pharmacli.err import (
     DuplicateRuleError,
     HeaderMismatch,
     InputError,
@@ -9,14 +9,14 @@ from ..err import (
     RuleError,
     UnknownRuleError,
 )
-from ..models.medicine import Drug, Medicine, Price, parsedate
-from ..models.rows import COLUMNS, RawRow, SkippedRow
-from ..output import open_output
-from ..pipeline import Cleaner, CleanReport
-from ..protocols import BaseRule, Rule, RuleRes
-from ..reader import CSVR, ParseReport
-from ..registry import RULES, Registry
-from ..writer import CSVW
+from models.medicine import Drug, Medicine, Price, parsedate
+from models.rows import COLUMNS, RawRow, SkippedRow
+from pharmacli.output import open_output
+from pharmacli.pipeline import Cleaner, CleanReport
+from pharmacli.protocols import BaseRule, Rule, RuleRes
+from pharmacli.reader import CSVR, ParseReport
+from pharmacli.registry import RULES, Registry
+from pharmacli.writer import CSVW
 
 __version__ = "2.0"
 

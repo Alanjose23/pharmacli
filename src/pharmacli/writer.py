@@ -3,8 +3,8 @@ import csv
 from collections.abc import Sequence
 from typing import TextIO
 
-from .models.medicine import Medicine
-from .models.rows import COLUMNS
+from models.medicine import Medicine
+from models.rows import COLUMNS
 
 
 # define a csv writer over an open filestream
