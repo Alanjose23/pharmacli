@@ -1,0 +1,54 @@
+
+name: PharmaCLI build and evaluation
+
+on:
+    push:
+        branches: ["main"]
+    pull_request:
+        branches: ["main"]
+
+jobs:
+    build-and-verify:
+        runs-on: ubuntu-latest
+        strategy:
+            matrix:
+                python-version: ["3.10", "3.11", "3.12"]
+        steps:
+            - name: checkout repository
+              uses: actions/checkout@v4
+
+            - name: set up python ${{ matrix.python-version }}
+              uses: actions/setup-python@v5
+              with:
+                  python-version: "${{ matrix.python-version }}"
+                  cache: 'pip'
+
+            - name: Install dependencies and package
+              run: |
+                  python -m pip install --upgrade pip
+                  pip install -e .
+
+            - name: Verify Executable Creation
+              run: pharmacli --help
+
+            
+            - name: Verify Command Routing (Dry Run)
+              run: |
+                  pharmacli columns
+                  pharmacli rules
+                  python - <<'EOF'
+                  from pharmacli.models.rows import COLUMNS
+                  rows = [
+                      "STRIBILD TABLET,61958120101,150.40902,01/01/2026,EA,C/I,N,4,B,,,04/29/2026",
+                      "BENICAR HCT 40-25 MG TAB,00713086530,15.66969,05/20/2026,EA,C/I,N,1,B,0.23432,05/20/2026,06/10/2026",
+                  ]
+                  with open("fixture.csv", "w") as fh:
+                      fh.write(",".join(COLUMNS) + "\n")
+                      fh.write("\n".join(rows) + "\n")
+                  EOF
+                  pharmacli clean fixture.csv --rule dedup --dryrun
+                  pharmacli sort fixture.csv --by date --dryrun
+
+            
+            - name: Verify Benchmark (CPU workload only)
+              run: pharmacli bench --workload cpu --workers 2

@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
-from models.medicine import Medicine
+from pharmacli.models.medicine import Medicine
 from pharmacli.protocols import Rule
 
 
@@ -11,7 +11,8 @@ from pharmacli.protocols import Rule
 class CleanReport:
     # results of a run
     records: tuple[Medicine, ...]
-    per_rule: tuple[tuple[str,str],...]
+    # offical record and how many rules each one removed
+    per_rule: tuple[tuple[str,int],...]
     notes: tuple[str, ...] = field(default_factory= tuple)
 
     @property

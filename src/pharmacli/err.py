@@ -1,6 +1,5 @@
 # define a base pharma cli error
 
-from graphlib import CycleError
 from pathlib import Path
 
 
@@ -14,7 +13,7 @@ class InputError(PharmaError):
         self.reason = reason
         super().__init__(reason)
 
-    # define column mismatch
+# define column mismatch
 class HeaderMismatch(InputError):
     def __init__ (self,path:Path, expected: tuple[str,...], found: tuple[str,...]) -> None:
         self.expected = expected
@@ -31,9 +30,11 @@ class RuleError(PharmaError):
 
 # unknown rule error
 class UnknownRuleError(RuleError):
-    def __init__(self, name:str| None = None) -> None:
+    def __init__(self, name: str | None = None, suggestion: str | None = None) -> None:
         self.name = name
-        super().__init__ (f"unknown rule {name}")
+        self.suggestion = suggestion
+        hint = f", did you mean {suggestion!r}?" if suggestion else ""
+        super().__init__(f"unknown rule {name}{hint}")
 
 
 # duplicate rule error
@@ -42,3 +43,7 @@ class DuplicateRuleError(RuleError):
         self.name = name
         super().__init__(f"{name} is already a Rule")
 
+
+# page error for api
+class FetchError(PharmaError):
+    pass

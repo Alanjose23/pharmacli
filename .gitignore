@@ -219,3 +219,20 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# SQLite WAL sidecars -- transient, must never be committed (committing a
+# stale -wal alongside a .db can resurrect or corrupt state on checkout).
+# demo.db itself is deliberately NOT ignored: it is the offline demo fallback.
+*.db-wal
+*.db-shm
+
+# local env file, never committed
+.env
+
+# working database and its WAL sidecars
+pharmacli.db
+*.db-wal
+*.db-shm
+
+# .ua
+.ua/

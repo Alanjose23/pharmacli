@@ -1,14 +1,15 @@
 # choosing between file and standard output
 
 import sys
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TextIO
 
 
 @contextmanager
-def open_output(path: Path | None) -> Iterator[TextIO]:
+#context manager depreciated because of Iterator, changed to Generator
+def open_output(path: Path | None) -> Generator[TextIO]:
     if path is None:
         yield sys.stdout
         return

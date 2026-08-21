@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import ClassVar, Protocol, runtime_checkable
 
-from models.medicine import Medicine
+from pharmacli.models.medicine import Medicine
 
 
 @dataclass(frozen=True, slots=True)

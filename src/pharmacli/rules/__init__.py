@@ -1,4 +1,4 @@
-# import both rules dedup and sort
+# importing rules
 from pharmacli.rules import dedup
 from pharmacli.rules import sort
 

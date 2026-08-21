@@ -3,11 +3,11 @@ from operator import attrgetter
 from typing import ClassVar, Final
 
 from pharmacli.err import RuleError
-from models.medicine import Medicine
+from pharmacli.models.medicine import Medicine
 from pharmacli.protocols import BaseRule, RuleRes
 from pharmacli.registry import RULES
 
-# define sortable columns(description, ndc, price, and date)
+# possible sorted columns
 COLUMNS: Final[dict[str,str]] = {
     "description": "drug.description",
     "ndc": "drug.ndc",
@@ -18,6 +18,8 @@ COLUMNS: Final[dict[str,str]] = {
 
 @RULES.register("sort")
 class SortRules(BaseRule):
+    
+
     name: ClassVar[str] = "sort"
 
     def __init__(self, by:str="description" ) -> None:

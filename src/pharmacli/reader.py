@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import cast
 
 from pharmacli.err import HeaderMismatch, InputError
-from models.medicine import Medicine
-from models.rows import COLUMNS, RawRow, SkippedRow
+from pharmacli.models.medicine import Medicine
+from pharmacli.models.rows import COLUMNS, RawRow, SkippedRow
 
 
 

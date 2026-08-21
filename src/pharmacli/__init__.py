@@ -1,5 +1,5 @@
 # set every input in pharma module 
-    # import rules last(so every rule registers first)
+# import rules last(so every rule registers first)
 
 from pharmacli.err import (
     DuplicateRuleError,
@@ -9,19 +9,19 @@ from pharmacli.err import (
     RuleError,
     UnknownRuleError,
 )
-from models.medicine import Drug, Medicine, Price, parsedate
-from models.rows import COLUMNS, RawRow, SkippedRow
+from pharmacli.models.medicine import Drug, Medicine, Price, parsedate
+from pharmacli.models.rows import COLUMNS, RawRow, SkippedRow
 from pharmacli.output import open_output
 from pharmacli.pipeline import Cleaner, CleanReport
 from pharmacli.protocols import BaseRule, Rule, RuleRes
 from pharmacli.reader import CSVR, ParseReport
 from pharmacli.registry import RULES, Registry
 from pharmacli.writer import CSVW
-from pharmacli import rules  # noqa: F401  # import last so every rule registers
+from pharmacli import rules  
 
 __version__ = "2.0"
 
-__all__ = [  # noqa: RUF022
+__all__ = [ 
     "COLUMNS",
     "BaseRule",
     "CleanReport",

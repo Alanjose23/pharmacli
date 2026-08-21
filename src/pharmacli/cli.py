@@ -1,13 +1,17 @@
 import argparse
+import asyncio
+import logging
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Final
 
-from models.rows import COLUMNS
+from pharmacli.models.rows import COLUMNS
 
 # import reader,writer, registry, pipeline, registry, models, errors
-from pharmacli.err import PharmaError, RuleError
+from pharmacli.config import load
+from pharmacli.err import FetchError, PharmaError, RuleError
 from pharmacli.output import open_output
 from pharmacli.pipeline import Cleaner
 from pharmacli.protocols import Rule
@@ -17,22 +21,15 @@ from pharmacli.writer import CSVW
 
 VERSION: Final[str] = "2.0.0"
 MAX_SKIPPED: Final[int] = 50
-# entry point of code
 
-#exit code definition
-    # 0 = success
 EXIT_OK: Final[int] = 0
-    # 1 = no usable rows
 EXIT_NOROWS: Final[int] = 1
-    # 2 for bad input
 EXIT_BADIN: Final[int] = 2
-    # 3 for bad rule
 EXIT_BADRULE: Final[int] = 3
+EXIT_NETWORK: Final[int] = 4
 
 
-# display errors
-def warn(message: object) -> None:
-    print(message, file= sys.stderr)
+log = logging.getLogger(__name__)
 
 # rule recongition
 def parserule(raw: str) -> tuple[str, dict[str,str]]:
@@ -55,11 +52,15 @@ def parserule(raw: str) -> tuple[str, dict[str,str]]:
 # build command line parser
 def buildparse() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog= "PharmaCLI", description= "CLI tool for parsing inventory CSVs", epilog= "use -n/ --dryrun to see what would change without writing",)
-    parser.add_argument("-v","--version", action = "version", version = f"PharmaCLI {VERSION}")
+    parser.add_argument("--version", action = "version", version = f"PharmaCLI {VERSION}")
 
     # define output input and dryrun tags
         
     
+    # supressing so newer iterations never stop the previous ones
+    verbosity = argparse.ArgumentParser(add_help=False)
+    verbosity.add_argument("-v", "--verbose", action="store_true", default=argparse.SUPPRESS, help="debug logging")
+
     fileopts = argparse.ArgumentParser(add_help=False)
     fileopts.add_argument("input", type = Path, help = "path to input CSV")
     fileopts.add_argument("-o", "--outfile", type=Path, default=None, help="write to here instead of stdout")
@@ -69,28 +70,43 @@ def buildparse() -> argparse.ArgumentParser:
 
     commands = parser.add_subparsers(dest="command", required= True, metavar="COMMAND")
     # add new rules command
-    clean = commands.add_parser("clean", parents=[fileopts], help="run one or more rules")
+    clean = commands.add_parser("clean", parents=[fileopts, verbosity], help="run one or more rules")
     clean.add_argument("--rule", action="append", default=[], metavar="NAME[:KEY=VALUE, ...]", help="repeatable; avaliable {', '.join(RULES.names())}")
 
 
-    dedup = commands.add_parser("dedup", parents=[fileopts], help= "remove dupes")
+    dedup = commands.add_parser("dedup", parents=[fileopts, verbosity], help= "remove dupes")
     dedup.add_argument("--key", default= "row", choices= ('row', 'ndc', 'ndc+date'), help = "what makes the rows duplicates")
-    sortd = commands.add_parser("sort", parents=[fileopts], help= "sorts all data by column name")
+    sortd = commands.add_parser("sort", parents=[fileopts, verbosity], help= "sorts all data by column name")
     sortd.add_argument("--by", default="description",choices = {'description', 'ndc', 'price', 'date'},help = "select the column in which you want to sort the column by, default is by description")
 
-    # list rules and 
 
-    # list columns 
-    commands.add_parser("rules", help="list every registry approved tool")
-    commands.add_parser("columns", help="list the expected columns")
+
+    # list rules and columns 
+    commands.add_parser("rules", parents=[verbosity], help="list every registry approved tool")
+    commands.add_parser("columns", parents=[verbosity], help="list the expected columns")
+
+
+
+    # net commands
+    fetch = commands.add_parser("fetch", parents=[verbosity],help="pull NADAC records into SQLite")
+    fetch.add_argument("--model", default="asyncio",choices=("sequential", "threaded", "multiproc", "asyncio"),help="which concurrency model to fetch with")
+    fetch.add_argument("--workers", type=int, default=None, help="pool size / max requests in flight")
+    fetch.add_argument("--limit", type=int, default=5000,help="how many records to fetch")
+    fetch.add_argument("--db", default=None, help="SQLite file to write to")
+    fetch.add_argument("--fresh", action="store_true",help="delete the database first, so the fetch is timed from empty instead of resuming")
+
+    bench = commands.add_parser("bench", parents=[verbosity],help="time the concurrency models")
+    bench.add_argument("--workload", default="both", choices=("io", "cpu", "both"), help="io = network fetch, cpu = parsing, both = run each")
+    bench.add_argument("--workers", type=int, default=None)
+    bench.add_argument("--limit", type=int, default=2000)
+    bench.add_argument("--db", default=None)
+
+    parser.add_argument("-v", "--verbose", action="store_true", help="debug logging")
 
     return parser
 
 
-# obtain arguments from command line grammar
-    # return rules, columns, or parse report with input line
-    # display common error faults( no file found and lines detected
-    
+# obtain arguments from CL
 def cmdrules() -> int:
     for name, summ in RULES.describeall():
         print(f"{name: <16} {summ}")
@@ -102,9 +118,7 @@ def cmdcol() -> int:
     return EXIT_OK
 
 
-# add and init rules with request
-    # create a configured instance
-# display rule set and if there is a bad rule:reject
+# rules dictionary, create, and if needed reject
 def buildrule(args: argparse.Namespace) -> list[Rule] | None:
 
 
@@ -119,10 +133,84 @@ def buildrule(args: argparse.Namespace) -> list[Rule] | None:
         try:
             name, options = parserule(raw)
             built.append(RULES.create(name, **options))
-        except (RuleError, TypeError) as exc:
-            warn(f"error: {exc}")
+        except RuleError as exc:
+            log.error("%s", exc)
             return None
     return built
+
+# fetching model
+def cmdfetch(args: argparse.Namespace) -> int:
+    from pharmacli.collect import MODELS, PAGE_SIZE
+    from pharmacli.store import connect, count, insert, pending_offsets
+
+    config = load()
+    db = args.db or config.db
+    workers = args.workers or config.workers
+
+    # removed after model fetch
+    if args.fresh:
+        for suffix in ("", "-wal", "-shm"):
+            try:
+                os.remove(db + suffix)
+            except FileNotFoundError:
+                pass
+        log.info("removed %s", db)
+
+    conn = connect(db)
+    try:
+        # already stored items are skipped
+        pages = pending_offsets(conn, args.limit, PAGE_SIZE)
+        if not pages:
+            log.info("nothing to fetch, %d rows already stored", count(conn))
+            return EXIT_OK
+
+        log.info("fetching %d pages with the %s model (%d workers)",len(pages), args.model, workers)
+        model = MODELS[args.model]
+
+        # each page is written after it comes back, not after whole program
+        stored = 0
+
+        def on_page(records):
+            nonlocal stored
+            stored += insert(conn, records)
+
+        start = time.perf_counter()
+        try:
+            if args.model == "asyncio":
+                # event loop for async model
+                records = asyncio.run(model(pages, workers, on_page))
+            else:
+                records = model(pages, workers, on_page)
+        except FetchError as exc:
+            log.error("%s", exc)
+            return EXIT_NETWORK
+        except KeyboardInterrupt:
+            # pages written stays written
+            log.warning("interrupted, run the same command again to carry on")
+            return EXIT_NETWORK
+        elapsed = time.perf_counter() - start
+
+        log.info("%d records in %.2fs (%.0f rec/s), %d new rows, %d total",
+                 len(records), elapsed,
+                 len(records) / elapsed if elapsed else 0, stored, count(conn))
+    finally:
+        conn.close()
+    return EXIT_OK
+
+
+# timing the models using bench.py
+def cmdbench(args: argparse.Namespace) -> int:
+    from pharmacli.bench import run
+
+    config = load()
+    try:
+        run(args.workload, args.limit, args.workers or config.workers,
+            args.db or config.db)
+    except FetchError as exc:
+        log.error("%s", exc)
+        return EXIT_NETWORK
+    return EXIT_OK
+
 
 def dispatch(args: argparse.Namespace) -> int:
     if args.command == "rules":
@@ -131,19 +219,26 @@ def dispatch(args: argparse.Namespace) -> int:
     if args.command == "columns":
         return cmdcol()
 
+    # do not read csv
+    if args.command == "fetch":
+        return cmdfetch(args)
+
+    if args.command == "bench":
+        return cmdbench(args)
+
     try:
         report = CSVR(args.input).read()
     except PharmaError as exc:
-        warn(f"error: {exc}")
+        log.error("%s", exc)
         return EXIT_BADIN
 
-    warn(f"understood: {len(report.records)} items and skipped {len(report.skipped)}")
+    log.info("understood %d items, skipped %d", len(report.records), len(report.skipped))
     for row in report.skipped[:MAX_SKIPPED]:
-        warn(row)
+        log.info("%s", row)
 
 
     if not report.records:
-        warn("No more usable rows found")
+        log.error("no usable rows found")
         return EXIT_NOROWS
 
     rules = buildrule(args)
@@ -153,23 +248,23 @@ def dispatch(args: argparse.Namespace) -> int:
     clean = Cleaner(tuple(rules)).run(report.records)
 
     for name, removed in clean.per_rule:
-        warn(f"{name} : rows removed : {removed}")
+        log.info("%s: rows removed: %d", name, removed)
     for note in clean.notes:
-        warn(note)
+        log.info("%s", note)
 
     outpath = args.outfile or "stdout"
     if args.dryrun:
-        warn(f"dry run results: could write {len(clean.records)} rows to {outpath}")
+        log.info("dry run: could write %d rows to %s", len(clean.records), outpath)
         return EXIT_OK
 
     try:
         with open_output(args.outfile) as stream:
             written = CSVW(stream).write(clean.records)
     except OSError as exc:
-        warn("Cannot be written to outpath")
+        log.error("cannot write to %s: %s", args.outfile, exc)
         return EXIT_BADIN
 
-    warn(f"{written} rows to {outpath}")
+    log.info("%d rows to %s", written, outpath)
     return EXIT_OK
 
 
@@ -178,6 +273,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = buildparse()
     args = parser.parse_args(argv)
 
+    # diagnostics go to stderr so stdout stays clean for piped CSV output
+    level = "DEBUG" if getattr(args, "verbose", False) else load().log_level
+    logging.basicConfig(level=level, stream=sys.stderr,
+                        format="%(levelname)s %(name)s: %(message)s")
+    # httpx logs a line per request at INFO, which buries our own output during a
+    # fetch. keep it unless someone actually asked for debug
+    if level != "DEBUG":
+        logging.getLogger("httpx").setLevel(logging.WARNING)
 
     try:
         return dispatch(args)

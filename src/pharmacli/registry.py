@@ -1,9 +1,9 @@
 from collections.abc import Callable
 from difflib import get_close_matches
+from inspect import signature
 from typing import Any, Generic, TypeVar
 
-from pharmacli.err import DuplicateRuleError, UnknownRuleError
-
+from pharmacli.err import DuplicateRuleError, RuleError, UnknownRuleError
 from pharmacli.protocols import Rule
 
 T = TypeVar('T')
@@ -32,10 +32,33 @@ class Registry(Generic[T]):
             raise UnknownRuleError(name, clse[0] if clse else None)
         return self._items[name]
 
+    # builds a rule, turning a bad option into a RuleError
+    #
+    # cls(**options) raises a plain TypeError when someone passes an option the
+    # rule does not take, and that used to escape as a traceback. converting it
+    # here means callers only ever have to handle RuleError
     def create(self, name: str, **options:Any) -> T:
         # instance of named class
         cls = self.get(name)
-        return cls(**options)
+        try:
+            return cls(**options)
+        except TypeError as exc:
+            accepted = self._accepted(cls)
+            raise RuleError(
+                f"rule {name} does not accept those options ({exc}); "
+                f"accepted options: {accepted}"
+            ) from exc
+
+    @staticmethod
+    def _accepted(target: type[Any]) -> str:
+        # read the rule's own __init__ signature so the message stays correct
+        # even when a rule adds or renames a parameter later
+        try:
+            params = signature(target.__init__).parameters
+        except (TypeError, ValueError):
+            return "unknown"
+        names = [p for p in params if p != "self"]
+        return ", ".join(names) if names else "none"
 
     def names(self) -> tuple[str,...]:
         # --choices here 
