@@ -154,13 +154,6 @@ _local = threading.local()
 
 
 # hands back the calling thread's own Session, creating it the first time
-#
-# a requests.Session is NOT safe to share between threads. it holds a connection
-# pool and cookie state, and several threads mutating that at once corrupts it.
-# the failures are intermittent and look like random network errors, which makes
-# them miserable to track down. giving each thread its own session keeps the
-# connection reuse without the sharing -- threading.local means each thread sees
-# a different value under the same attribute name
 def _session() -> requests.Session:
     if not hasattr(_local, "session"):
         _local.session = requests.Session()
