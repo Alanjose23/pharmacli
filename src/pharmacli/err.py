@@ -15,9 +15,8 @@ class InputError(PharmaError):
 
 # define column mismatch
 class HeaderMismatch(InputError):
+    # header mismatched reworked for inventory so that the inventory csv can be consumed
     def __init__ (self,path:Path, expected: tuple[str,...], found: tuple[str,...]) -> None:
-        self.expected = expected
-        self.found = found
         super().__init__(path, f"Header Mismatch, {len(expected)} columns but {len(found)} columns found")
 
 # custom errors

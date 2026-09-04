@@ -36,14 +36,10 @@ RawRow = TypedDict(
     }
 )
 
-# the reasons a row gets dropped, used for easy access to reasons
-REASON: Final[dict[str,str]] = {
-    "missing_ndc":      "Missing NDC",
-    "missing_desc":     "Missing Description",
-    "missing_price":    "missing price",
-    "malformed_price":  "malformed price",
-    "nonpositive_price":"non-positive price",
-}
+# REMOVED: REASON, a dict of five skip-reason strings. Every value was read
+# once or twice, all from models/medicine.py, and the tests already assert the
+# literal strings -- so the dict was a lookup table with one consumer and no
+# second spelling to keep in sync. The literals now live at the raise sites.
 
 
 @dataclass(frozen=True, slots=True)

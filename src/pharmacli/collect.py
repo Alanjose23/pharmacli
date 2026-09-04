@@ -9,8 +9,8 @@ import time
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from typing import Any, cast
 
+# httpx only. so one type of exceptions only
 import httpx
-import requests
 
 from pharmacli.config import load
 from pharmacli.err import FetchError
@@ -86,7 +86,7 @@ def retryable(status: int) -> bool:
 
 
 #fetching page with requests
-def fetch_page(session: requests.Session, offset: int, timeout: int) -> list[dict]:
+def fetch_page(session: httpx.Client, offset: int, timeout: int) -> list[dict]:
     for attempt in range(MAX_ATTEMPTS):
         try:
             response = session.get(
@@ -98,7 +98,7 @@ def fetch_page(session: requests.Session, offset: int, timeout: int) -> list[dic
             if not retryable(response.status_code):
                 raise FetchError(f"offset {offset}: HTTP {response.status_code}")
             log.warning("offset %d: HTTP %d", offset, response.status_code)
-        except (requests.ConnectionError, requests.Timeout) as exc:
+        except (httpx.ConnectError, httpx.TimeoutException) as exc:
             # dropped connection or timeout error as a warning
             log.warning("offset %d: %s", offset, type(exc).__name__)
 
@@ -136,11 +136,12 @@ async def fetch_page_async(
     raise FetchError(f"offset {offset}: gave up after {MAX_ATTEMPTS} attempts")
 
 
+# workers are made into one so that sequential process can run effectively
 def fetch_sequential(pages: list[int], workers: int = 1, on_page=None) -> list[Medicine]:
     timeout = load().timeout
     out: list[Medicine] = []
-    # one session on every page, once instead of per requests
-    with requests.Session() as session:
+    # one client for every page, once instead of per request
+    with httpx.Client(timeout=timeout) as session:
         for offset in pages:
             records = parse(fetch_page(session, offset, timeout), offset)
             if on_page:
@@ -154,9 +155,9 @@ _local = threading.local()
 
 
 # hands back the calling thread's own Session, creating it the first time
-def _session() -> requests.Session:
+def _session() -> httpx.Client:
     if not hasattr(_local, "session"):
-        _local.session = requests.Session()
+        _local.session = httpx.Client(timeout=load().timeout)
     return _local.session
 
 
@@ -182,7 +183,7 @@ def fetch_threaded(pages: list[int], workers: int = 10, on_page=None) -> list[Me
 def _fetch_one_proc(args: tuple[int, int]) -> list[Medicine]:
     ## unit of work handed to a process
     offset, timeout = args
-    with requests.Session() as session:
+    with httpx.Client(timeout=timeout) as session:
         return parse(fetch_page(session, offset, timeout), offset)
 
 

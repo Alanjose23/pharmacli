@@ -6,7 +6,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Final
 
-from pharmacli.models.rows import REASON, RawRow, SkippedRow
+from pharmacli.models.rows import RawRow, SkippedRow
 
 # the date layouts from csv and api 
 DATES: Final[tuple[str,...]] = ("%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y")
@@ -38,18 +38,18 @@ class PriceRes:
 def parseprice(raw: str) -> PriceRes:
     text = raw.strip()
     if not text:
-        return PriceRes(None, REASON["missing_price"])
+        return PriceRes(None, "missing price")
 
     try:
         value = Decimal(text)
     except InvalidOperation:
-        return PriceRes(None, REASON["malformed_price"])
+        return PriceRes(None, "malformed price")
 
     if not value.is_finite():
-        return PriceRes(None, REASON["malformed_price"])
+        return PriceRes(None, "malformed price")
 
     if value <= 0:
-        return PriceRes(None, REASON["nonpositive_price"])
+        return PriceRes(None, "non-positive price")
 
     return PriceRes(value, None)
 
@@ -106,13 +106,13 @@ class Medicine:
         trueprice = parseprice(rprice)
 
         if not ndc:
-            return SkippedRow(line_no, REASON["missing_ndc"])
+            return SkippedRow(line_no, "Missing NDC")
         if not desc:
-            return SkippedRow(line_no, REASON["missing_desc"])
+            return SkippedRow(line_no, "Missing Description")
 
         # passing on the specific reason
         if trueprice.value is None:
-            return SkippedRow(line_no, trueprice.reason or REASON["malformed_price"])
+            return SkippedRow(line_no, trueprice.reason or "malformed price")
 
         # a generic price should not kill the row
         genprice = parseprice(genrow)

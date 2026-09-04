@@ -52,3 +52,12 @@ jobs:
             
             - name: Verify Benchmark (CPU workload only)
               run: pharmacli bench --workload cpu --workers 2
+
+            # the analysis tests the numpy imports to verify that it works
+            - name: Install analysis extra and run tests
+              run: |
+                  pip install -e ".[analysis]"
+                  pytest -q
+
+            - name: Verify Vectorization Benchmark
+              run: pharmacli bench --workload numpy

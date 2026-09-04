@@ -14,6 +14,9 @@ DEFAULTS = {
     "PHARMACLI_WORKERS": "10",
     "PHARMACLI_TIMEOUT": "30",
     "PHARMACLI_LOG_LEVEL": "INFO",
+    # state fee for prescription on top of ingredient cost, 10.64 is Medicaid standard
+    "PHARMACLI_DISPENSING_FEE": "10.64",
+    # used for margin math
 }
 
 
@@ -21,12 +24,12 @@ DEFAULTS = {
 def get(name: str) -> str:
     value = os.environ.get(name, "").strip()
     return value or DEFAULTS[name]
-def getint(name: str) -> int:
-    raw = get(name)
+# parser for numerics, env values fall back on default if env is not setup properly
+def num(name: str, cast):
     try:
-        return int(raw)
+        return cast(get(name))
     except ValueError:
-        return int(DEFAULTS[name])
+        return cast(DEFAULTS[name])
 
 
 # setup config
@@ -36,13 +39,15 @@ class Config:
     workers: int
     timeout: int
     log_level: str
+    dispensing_fee: float
 
 
 # builds config file that the code uses
 def load() -> Config:
     return Config(
         db=get("PHARMACLI_DB"),
-        workers=getint("PHARMACLI_WORKERS"),
-        timeout=getint("PHARMACLI_TIMEOUT"),
+        workers=num("PHARMACLI_WORKERS", int),
+        timeout=num("PHARMACLI_TIMEOUT", int),
         log_level=get("PHARMACLI_LOG_LEVEL").upper(),
+        dispensing_fee=num("PHARMACLI_DISPENSING_FEE", float),
     )

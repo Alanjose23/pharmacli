@@ -13,7 +13,8 @@ from pharmacli.models.medicine import Drug, Medicine, Price, parsedate
 from pharmacli.models.rows import COLUMNS, RawRow, SkippedRow
 from pharmacli.output import open_output
 from pharmacli.pipeline import Cleaner, CleanReport
-from pharmacli.protocols import BaseRule, Rule, RuleRes
+# `Rule` (Protocol) removed -- it duplicated BaseRule; see protocols.py
+from pharmacli.protocols import BaseRule, RuleRes
 from pharmacli.reader import CSVR, ParseReport
 from pharmacli.registry import RULES, Registry
 from pharmacli.writer import CSVW
@@ -39,7 +40,6 @@ __all__ = [
     "RULES",
     "RawRow",
     "Registry",
-    "Rule",
     "RuleError",
     "RuleRes",
     "SkippedRow",

@@ -18,7 +18,9 @@ COLUMNS: Final[dict[str,str]] = {
 
 @RULES.register("sort")
 class SortRules(BaseRule):
-    
+    """Order records by description, NDC, price, or effective date."""
+    # the docstring is not decoration: Registry.describeall() reads its first
+    # line, so without one `pharmacli rules` prints a blank description
 
     name: ClassVar[str] = "sort"
 

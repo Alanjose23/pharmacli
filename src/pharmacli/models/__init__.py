@@ -1,26 +1,8 @@
-from pharmacli.models.medicine import (
-    DATES,
-    Drug,
-    Medicine,
-    Price,
-    PriceRes,
-    parsedate,
-    parseotc,
-    parseprice,
-)
-from pharmacli.models.rows import COLUMNS, REASON, RawRow, SkippedRow
-
-__all__ = [
-    "COLUMNS",
-    "DATES",
-    "Drug",
-    "Medicine",
-    "Price",
-    "PriceRes",
-    "RawRow",
-    "REASON",
-    "SkippedRow",
-    "parsedate",
-    "parseotc",
-    "parseprice",
-]
+# Intentionally empty -- package marker only.
+#
+# REMOVED: a 26-line re-export barrel (Drug, Medicine, Price, PriceRes, DATES,
+# COLUMNS, REASON, RawRow, SkippedRow, parsedate, parseotc, parseprice) plus its
+# __all__. Nothing ever imported `from pharmacli.models import ...` -- every
+# caller reaches for models.medicine / models.rows directly, and the top-level
+# pharmacli/__init__.py already re-exports the same names from those modules.
+# It was a second barrel duplicating the first, serving no importer.

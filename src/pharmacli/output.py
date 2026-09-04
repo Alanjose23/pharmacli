@@ -1,7 +1,7 @@
 # choosing between file and standard output
 
 import sys
-from collections.abc import Generator, Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TextIO
@@ -14,9 +14,5 @@ def open_output(path: Path | None) -> Generator[TextIO]:
         yield sys.stdout
         return
 
-    handle = open(path, "w", newline="", encoding="utf-8")
-    try:
-        yield handle 
-
-    finally:
-        handle.close()
+    with open(path, "w", newline="", encoding="utf-8") as handle:
+        yield handle
