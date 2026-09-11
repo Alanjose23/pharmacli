@@ -16,8 +16,10 @@ class InputError(PharmaError):
 # define column mismatch
 class HeaderMismatch(InputError):
     # header mismatched reworked for inventory so that the inventory csv can be consumed
-    def __init__ (self,path:Path, expected: tuple[str,...], found: tuple[str,...]) -> None:
-        super().__init__(path, f"Header Mismatch, {len(expected)} columns but {len(found)} columns found")
+    # takes counts, not the column tuples: the old signature accepted both
+    # sequences and used nothing but len() on them
+    def __init__(self, path: Path, expected: int, found: int) -> None:
+        super().__init__(path, f"Header Mismatch, {expected} columns but {found} columns found")
 
 # custom errors
 
@@ -36,11 +38,10 @@ class UnknownRuleError(RuleError):
         super().__init__(f"unknown rule {name}{hint}")
 
 
-# duplicate rule error
-class DuplicateRuleError(RuleError):
-    def __init__(self, name:str) -> None:
-        self.name = name
-        super().__init__(f"{name} is already a Rule")
+# REMOVED: DuplicateRuleError. It could only fire if two rules registered the
+# same name, which needed a decorator registry to be possible at all. The rule
+# table is now a plain dict literal -- a duplicate key is a syntax-level
+# mistake, not a runtime error class.
 
 
 # page error for api

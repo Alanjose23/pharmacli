@@ -46,12 +46,34 @@ CREATE TABLE IF NOT EXISTS watch (
 """
 
 
+# openFDA pack sizes, cached. The mapping is near-static and openFDA allows
+# 1,000 requests a day without a key, so a 5,000-NDC shelf cannot be refetched
+# per run. `looked` is stored even on a miss: ~3 NDCs in 20 are not in the
+# openFDA directory, and without it every run would retry all of them forever.
+PACKAGE = """
+CREATE TABLE IF NOT EXISTS package (
+    ndc       TEXT PRIMARY KEY,
+    pack_size REAL,
+    pack_desc TEXT,
+    looked    TEXT NOT NULL
+)
+"""
+
+
 # opens file and makes sure that it exists
 def connect(path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(path)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute(SCHEMA)
     conn.execute(WATCH)
+    conn.execute(PACKAGE)
+    # Every pharmacist-facing command filters one weekly file out of ~1M rows.
+    # The UNIQUE(ndc, effective_date, as_of_date) autoindex cannot serve that --
+    # as_of_date is its third column -- so those queries were full table scans.
+    # Measured: today 0.58s -> 0.35s, margin and reorder both
+    # ~1.8x, for 19.6MB (14% of the file). Worth it for interactive commands;
+    # the cost to `fetch` is invisible next to the network.
+    conn.execute("CREATE INDEX IF NOT EXISTS nadac_week ON nadac(as_of_date)")
     # sqlite adding cost, on hand, and monthly values
     for col in ("cost REAL", "on_hand REAL", "monthly REAL"):
         try:
@@ -163,6 +185,38 @@ def watch_remove(conn: sqlite3.Connection, ndcs: Sequence[str]) -> int:
 
 def watched(conn: sqlite3.Connection) -> list[str]:
     return [n for (n,) in conn.execute("SELECT ndc FROM watch ORDER BY ndc")]
+
+
+def packages(conn: sqlite3.Connection) -> dict[str, tuple[float | None, str]]:
+    return {n: (size, desc or "")
+            for n, size, desc in conn.execute(
+                "SELECT ndc, pack_size, pack_desc FROM package")}
+
+
+def save_package(conn: sqlite3.Connection, ndc: str,
+                 size: float | None, desc: str) -> None:
+    conn.execute("INSERT INTO package (ndc, pack_size, pack_desc, looked)"
+                 " VALUES (?,?,?,?) ON CONFLICT(ndc) DO UPDATE SET"
+                 " pack_size=excluded.pack_size, pack_desc=excluded.pack_desc,"
+                 " looked=excluded.looked",
+                 (ndc.strip().zfill(11), size, desc, date.today().isoformat()))
+    conn.commit()
+
+
+def panel_fingerprint(conn: sqlite3.Connection) -> str:
+    import hashlib
+
+    h = hashlib.md5()
+    for row in conn.execute(
+            "SELECT ndc, description, unit_price, pricing_unit, effective_date,"
+            " as_of_date, otc, rate_class, generic_price, generic_effective_date,"
+            " explanation_code FROM nadac ORDER BY ndc, effective_date, as_of_date"):
+        h.update(repr(row).encode())
+    return h.hexdigest()
+
+
+def last_priced(conn: sqlite3.Connection) -> dict[str, str]:
+    return dict(conn.execute("SELECT ndc, MAX(as_of_date) FROM nadac GROUP BY ndc"))
 
 
 def newest_week(conn: sqlite3.Connection) -> str | None:

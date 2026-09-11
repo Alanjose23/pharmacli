@@ -236,3 +236,33 @@ pharmacli.db
 
 # .ua
 .ua/
+
+# ── week 6: experiment tracking, model artifacts ──────────────────────────
+# The MLflow tracking store and its artifact root. Both are regenerable by
+# `pharmacli sweep`, and mlflow.db grows without bound across runs.
+mlflow.db
+mlruns/
+
+# The promoted model + sidecar. Derived: `pharmacli sweep` rebuilds them, and
+# the registry is the versioning story, not git. A 5MB pickle in git history
+# is a pickle in git history forever.
+models/
+
+# pharmacli.db.dvc is deliberately NOT ignored -- that pointer file IS the
+# dataset version, and committing it is the entire point of `dvc add`.
+
+# `pharmacli desk` writes here by default -- 683KB of generated HTML with your
+# inventory inlined. Root-anchored on purpose: a bare `desk.html` pattern would
+# also ignore src/pharmacli/desk.html, which is the tracked template it is built
+# from.
+/desk.html
+
+# ── week 7: deep learning artifacts ───────────────────────────────────────
+# TensorBoard event files. Regenerable by `pharmacli nn`, and they accumulate
+# one directory per run.
+runs/
+
+# MedMNIST archives, downloaded on first `pharmacli nn --task xray` (4MB each).
+# Cached in data/ so the download happens once; nothing about them is ours.
+*.npz
+

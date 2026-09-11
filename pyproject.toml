@@ -22,11 +22,6 @@ pharmacli = "pharmacli.cli:main"
 where = ["src"]
 include = ["pharmacli*"]
 
-# desk.html is the buying-desk template `pharmacli desk` fills in; it has to
-# ship with the package, not just sit in the source tree
-[tool.setuptools.package-data]
-pharmacli = ["desk.html"]
-
 # analysis: pip install -e ".[analysis]"
 [project.optional-dependencies]
 analysis = [
@@ -43,9 +38,41 @@ analysis = [
     "shap>=0.44",
 ]
 
+# week 6, split deliberately. `serve` is light enough for CI to install so the
+# API tests actually run; `track` drags in mlflow (sqlalchemy, alembic, flask)
+# and is dev-only. serve.py never imports mlflow, which is what makes the split
+# possible -- see the joblib+sidecar export in track.py.
+serve = [
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+]
+track = [
+    "mlflow>=2.9",
+    "dvc>=3.0",
+]
+
+# week 7. Install torch from the CPU index or pip drags in multi-GB CUDA wheels
+# this machine has no GPU for:
+#   pip install --index-url https://download.pytorch.org/whl/cpu torch
+# No torchvision and no medmnist package: the dataset is a plain .npz behind a
+# URL and the augmentations are four lines of numpy. tensorboard is required by
+# torch.utils.tensorboard.SummaryWriter.
+dl = [
+    "torch>=2.2",
+    "tensorboard>=2.16",
+]
+
+# week 8. sentence-transformers pulls transformers + tokenizers with it, so one
+# entry covers embeddings AND fine-tuning. Deliberately NOT here: `datasets`
+# (the corpus is a SQL query) and any vector store -- 6,359 x 384 floats is a
+# 9.8MB matrix and the whole index is one np.dot.
+nlp = [
+    "sentence-transformers>=3.0",
+]
+
 # pandas and scipy ship
 [[tool.mypy.overrides]]
-module = ["pandas.*", "scipy.*", "sklearn.*", "shap.*"]
+module = ["pandas.*", "scipy.*", "sklearn.*", "shap.*", "mlflow.*", "dvc.*", "joblib.*", "torch.*"]
 ignore_missing_imports = true
 
 # tests were renamed t

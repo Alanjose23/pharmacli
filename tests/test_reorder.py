@@ -1,5 +1,3 @@
-
-
 from pharmacli.cli import (expected_price, move_odds, days_to_reprice,reorder_advice)
 
 
@@ -13,14 +11,52 @@ def tmoveoddscomefromthepanel():
     assert days_to_reprice(10) == 14
 
 
-def tgenericsfallbrandsrise():
-
+def tgenericserodeandbrandsdonot():
     at_peak = 24
     assert expected_price(1.0, at_peak, "G") < 1.0        # generic erodes
-    assert expected_price(1.0, at_peak, "B") > 1.0        # brand rises
-    assert expected_price(1.0, at_peak, "B-BIO") > 1.0    # biologic counts as brand
+    # a plain brand is FLAT in expectation: its up and down moves are the same
+    # size and near-equally likely. The old model claimed +1.74% here.
+    assert abs(expected_price(1.0, at_peak, "B") - 1.0) < 0.0005
+    # ...and the erosion is well under 1%, not the 1.67% the old constant gave
+    assert 0.003 < 1.0 - expected_price(1.0, at_peak, "G") < 0.010
     # a price that just repriced barely moves in expectation, either way
     assert abs(expected_price(1.0, 7, "G") - 1.0) < 0.001
+
+
+def tunknownrateclassdoesnotinventmovement():
+    # an unmapped class falls back to plain brand, the flattest option
+    assert abs(expected_price(1.0, 24, "WAT") - 1.0) < 0.0005
+
+
+def tmoveevmatchesthepanelderivation():
+    pytest = __import__("pytest")
+    pd = pytest.importorskip("pandas")
+    frame = pytest.importorskip("pharmacli.frame")
+    from pharmacli.cli import MOVE_EV
+
+    # a two-NDC panel: one steps down every other week, one steps up
+    weeks = pd.date_range("2026-01-07", periods=12, freq="7D")
+    rows = []
+    for i, w in enumerate(weeks):
+        rows.append({"ndc": "1", "as_of_date": w, "unit_price": 10.0 - i * 0.1,
+                     "rate_class": "G"})
+        rows.append({"ndc": "2", "as_of_date": w, "unit_price": 10.0 + i * 0.1,
+                     "rate_class": "B"})
+    prof = frame.move_profile(pd.DataFrame(rows))
+    # the falling generic must come out negative, the rising brand positive
+    assert prof.loc["G", "ev"] < 0 < prof.loc["B", "ev"]
+    assert prof.loc["G", "down_share"] == 1.0
+    # and every class the CLI ships a constant for is one move_profile can produce
+    assert set(MOVE_EV) >= {"G", "B"}
+
+
+def tpennyswingsdonotchangetheorder():
+    kw = dict(on_hand=1200, monthly=1800, age_days=18, price=5.0, rate_class="B")
+    loud = reorder_advice(**kw, min_swing=0.0)      # no floor: acts on pennies
+    quiet = reorder_advice(**kw, min_swing=1.00)    # shipped floor
+    assert loud["action"] == "order now" and loud["saving"] < 1.00
+    assert quiet["action"].startswith("in ")        # routine
+    assert quiet["saving"] == 0.0                   # and claims nothing
 
 
 def tstockbeatspricewhenyouareout():
@@ -59,3 +95,27 @@ def tnovolumenoadvice():
     r = reorder_advice(on_hand=100, monthly=0, age_days=24, price=1.0, rate_class="G")
     assert r["action"] == "no data"
     assert r["order_by"] is None
+
+
+def tthecalendarrulereproduceseveryobservedrepricingfile():
+    from datetime import date
+
+    from pharmacli.cli import next_reprice
+
+    observed = ["2026-01-21", "2026-02-18", "2026-03-18", "2026-04-22",
+                "2026-05-20", "2026-06-17", "2026-07-22", "2026-08-19"]
+    for prev, nxt in zip(observed, observed[1:]):
+        assert next_reprice(date.fromisoformat(prev)).isoformat() == nxt, prev
+    # and it rolls into the next year rather than repeating December
+    assert next_reprice(date(2026, 12, 31)) == date(2027, 1, 20)
+
+
+def tnextrepriceneverreturnsthedateyougaveit():
+    from datetime import date, timedelta
+
+    from pharmacli.cli import next_reprice
+
+    d = date(2026, 1, 1)
+    for _ in range(400):                      # walk a year of days
+        assert next_reprice(d) > d
+        d += timedelta(days=1)

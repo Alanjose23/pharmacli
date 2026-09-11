@@ -32,10 +32,6 @@ WEEK = pd.Timedelta("7D")
 
 #read nadac table to an optimized fram, sorted by ndc and as of date
 def load(db: str | sqlite3.Connection | None = None) -> pd.DataFrame:
-    """Read the nadac table into a typed, memory-optimized frame.
-
-    Sorted by (ndc, as_of_date), which is what makes weekly_change correct.
-    """
     # closed connection, as ut would leak a file handle per call
     if isinstance(db, sqlite3.Connection):
         df = pd.read_sql("SELECT * FROM nadac", db)
@@ -79,10 +75,6 @@ def brand_generic(df: pd.DataFrame) -> pd.DataFrame:
     out["ratio"] = out["unit_price"] / out["generic_price"]
     return out
 
-#last seen ndc in database
-def last_seen(df: pd.DataFrame) -> pd.Series:
-    return df.groupby("ndc", observed=True)["as_of_date"].max()
-
 # gini for every ndc movement, 0 = ndc moves price equally, 1 does it all
 def gini(values) -> float:
     x = np.sort(np.asarray(values, dtype=float))
@@ -92,11 +84,39 @@ def gini(values) -> float:
     # sorts whole array
     return float((2 * np.arange(1, n + 1) - n - 1).dot(x) / (n * x.sum()))
 
-## percentage analysis because change in prices is not able to be directly analyzed.
-def bootstrap_ci(values, n: int = 2000, seed: int = 0) -> tuple[float, float]:
-    rng = np.random.default_rng(seed)
-    v = np.asarray(values, dtype=float)
-    # median
-    draws = np.median(rng.choice(v, (n, len(v)), replace=True), axis=1)
-    lo, hi = np.percentile(draws, [2.5, 97.5])
-    return float(lo), float(hi)
+# ── how big a move is, per rate class ────────────────────────────────────────
+# This is the DERIVATION behind cli.MOVE_EV and cli.DOWN_SHARE. Those constants
+# are pasted into cli.py so the CLI needs no panel to run, but they came from
+# here and this function is how you re-check them:
+#
+#     from pharmacli.frame import load, move_profile
+#     print(move_profile(load("pharmacli.db")))
+#
+# The old code used a single 1.74% for every drug and assumed generics fall and
+# brands rise. Measured over 227,638 real moves that is wrong on both counts:
+# brand up-moves and down-moves very nearly cancel, so a brand's EXPECTED change
+# is ~+0.005%, not +1.74% -- an overstatement of about 362x.
+def move_profile(df: pd.DataFrame) -> pd.DataFrame:
+    d = weekly_change(df)
+    # a move is a week where the price actually changed; unchanged weeks and
+    # weeks with no comparable prior observation carry no directional signal
+    moved = d[d["wow"].notna() & (d["wow"] != 0)]
+
+    rows = {}
+    for rc, s in moved.groupby("rate_class", observed=True):
+        dn, up = s.loc[s["wow"] < 0, "wow"], s.loc[s["wow"] > 0, "wow"]
+        if not len(s):
+            continue
+        share = len(dn) / len(s)
+        # an all-one-direction class would make the other median NaN; 0.0 is the
+        # right stand-in, since a direction that never happens contributes nothing
+        med_dn = float(dn.abs().median()) if len(dn) else 0.0
+        med_up = float(up.abs().median()) if len(up) else 0.0
+        rows[rc] = {
+            "n": len(s),
+            "down_share": share,
+            "med_down": med_dn,
+            "med_up": med_up,
+            "ev": -share * med_dn + (1 - share) * med_up,
+        }
+    return pd.DataFrame(rows).T

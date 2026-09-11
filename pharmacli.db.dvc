@@ -1,0 +1,5 @@
+outs:
+- md5: 58112d1c05724fb2cec082975978dcff
+  size: 165629952
+  hash: md5
+  path: pharmacli.db

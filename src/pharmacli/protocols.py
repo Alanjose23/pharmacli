@@ -1,22 +1,17 @@
-# rule creation using an abstract method 
-from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from dataclasses import dataclass
-from typing import ClassVar
+from typing import Protocol
 
 from pharmacli.models.medicine import Medicine
 
+# (surviving records, how many this rule removed). The count is not bookkeeping:
+# `pharmacli clean` prints it per rule, and a rule that removed everything looks
+# identical to one that did nothing without it. `sort` always reports 0, which
+# is the honest answer for a rule that reorders rather than filters.
+RuleOut = tuple[tuple[Medicine, ...], int]
 
-@dataclass(frozen=True, slots=True)
-class RuleRes:
-    #overview of what a rule's production
-    records: tuple[Medicine,...]
-    removed: int
 
+class BaseRule(Protocol):
+    name: str
+    description: str      # what `pharmacli rules` prints
 
-class BaseRule(ABC):
-    # conventions for the same built in rules
-    name: ClassVar[str] = ""
-
-    @abstractmethod
-    def apply(self, records: Sequence[Medicine]) -> RuleRes: ...
+    def apply(self, records: Sequence[Medicine]) -> RuleOut: ...

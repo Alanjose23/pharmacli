@@ -1,5 +1,3 @@
-
-
 from datetime import date
 from decimal import Decimal
 
@@ -100,8 +98,6 @@ def tstoreround():
 
 
 def twatchroundtrip(tmp_path):
-    """The stock list. NDCs normalise to 11 digits on the way in, so the same
-    drug entered two ways is one entry, not two."""
     from pharmacli.store import watch_add, watch_remove, watched
 
     conn = connect(str(tmp_path / "w.db"))
@@ -168,3 +164,78 @@ def tquantitysurvivesacostsonlyimport(tmp_path):
     watch_cost(conn, [("00378351501", 0.085, 90, 60)])       # a real count
     assert stock(conn)["00378351501"] == (90.0, 60.0)
     conn.close()
+
+
+# ── the clean pipeline, end to end through main() ────────────────────────────
+# Added after a refactor renamed a local and left `len(clean.records)` behind on
+# the --dryrun branch. It was a NameError on every dry run and the whole suite
+# stayed green, because nothing exercised `pharmacli clean` as a command.
+def _fixture_csv(tmp_path):
+    from pharmacli.models.rows import COLUMNS
+
+    body = ",".join(COLUMNS) + "\n"
+    dupe = ("DRUG A,00000000001,1.00,01/01/2026,EA,C/I,N,1,G,,,01/08/2026\n")
+    (tmp_path / "in.csv").write_text(body + dupe + dupe, encoding="utf-8")
+    return str(tmp_path / "in.csv")
+
+
+def tcleandryrunreportswithoutwriting(tmp_path):
+    from pharmacli.cli import EXIT_OK, main
+
+    src = _fixture_csv(tmp_path)
+    out = tmp_path / "out.csv"
+    assert main(["clean", src, "--rule", "dedup", "-n", "-o", str(out)]) == EXIT_OK
+    assert not out.exists(), "--dryrun must not write"
+
+
+def tcleanwritesthesurvivingrows(tmp_path):
+    import csv
+
+    from pharmacli.cli import EXIT_OK, main
+    from pharmacli.models.rows import COLUMNS
+
+    src = _fixture_csv(tmp_path)
+    out = tmp_path / "out.csv"
+    assert main(["clean", src, "--rule", "dedup", "-o", str(out)]) == EXIT_OK
+    rows = list(csv.reader(out.open(newline="", encoding="utf-8")))
+    assert rows[0] == list(COLUMNS)        # all 12 columns survive the round trip
+    assert len(rows) == 2, "two identical rows in, one out"
+    # Pharmacy Type Indicator is constant in NADAC and never stored in SQLite,
+    # but a CSV round trip must still hand back what it was given
+    assert rows[1][COLUMNS.index("Pharmacy Type Indicator")] == "C/I"
+
+
+def tunknownrulesuggestsanearone(tmp_path):
+    from pharmacli.cli import EXIT_BADRULE, main
+
+    assert main(["clean", _fixture_csv(tmp_path), "--rule", "dedpu", "-n"]) == EXIT_BADRULE
+
+
+def tsettingsaredocumentedwheretheyarelookedfor():
+    from pathlib import Path
+
+    from pharmacli.config import DEFAULTS
+
+    root = Path(__file__).resolve().parent.parent
+    for doc in (".env.example", "README.md"):
+        text = (root / doc).read_text(encoding="utf-8")
+        undocumented = [k for k in DEFAULTS if k not in text]
+        assert not undocumented, f"{doc} does not mention {undocumented}"
+
+
+def twatchrmactuallyremoves(tmp_path):
+    from pharmacli.cli import EXIT_BADIN, EXIT_OK, main
+    from pharmacli.store import connect, watched
+
+    db = str(tmp_path / "w.db")
+    assert main(["watch", "add", "00000000001", "00000000002", "--db", db]) == EXIT_OK
+    assert main(["watch", "rm", "00000000001", "--db", db]) == EXIT_OK
+
+    conn = connect(db)
+    try:
+        assert watched(conn) == ["00000000002"]
+    finally:
+        conn.close()
+
+    # and it must not silently succeed with nothing to remove
+    assert main(["watch", "rm", "--db", db]) == EXIT_BADIN

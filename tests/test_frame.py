@@ -56,11 +56,6 @@ def tgencomp(db):
     assert bg["ratio"].iloc[0] == pytest.approx(10.0)  # 20.00 / 2.00
 
 
-def tseen(db):
-    seen = frame.last_seen(frame.load(db))
-    assert seen["00000000001"] == pd.Timestamp("2026-01-21")
-    assert seen["00000000002"] == pd.Timestamp("2026-01-07")
-
 
 def tknownval():
     assert frame.gini([5, 5, 5, 5]) == pytest.approx(0.0)  # perfectly equal
@@ -69,9 +64,4 @@ def tknownval():
     assert frame.gini([0, 0]) == 0.0  # no movement at all
 
 
-def tmedian():
-    lo, hi = frame.bootstrap_ci(np.arange(100.0), n=200)
-    assert lo <= np.median(np.arange(100.0)) <= hi
-    assert frame.bootstrap_ci(np.arange(100.0), n=200) == frame.bootstrap_ci(
-        np.arange(100.0), n=200
-    )  # seeded
+

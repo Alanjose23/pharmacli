@@ -5,6 +5,7 @@
 
 import logging
 import sqlite3
+from contextlib import closing
 
 # httpx.
 import httpx
@@ -24,6 +25,15 @@ def pad(hyphenated: str) -> str | None:
     if len(parts) != 3:
         return None
     return parts[0].zfill(5) + parts[1].zfill(4) + parts[2].zfill(2)
+
+
+def packsize(description: str) -> float | None:
+    head = description.strip().split(" ", 1)[0].replace(",", "")
+    try:
+        n = float(head)
+    except ValueError:
+        return None
+    return n if n > 0 else None
 
 
 def _candidates(ndc: str) -> list[str]:
@@ -59,11 +69,13 @@ def lookup(ndc: str, timeout: int | None = None) -> dict | None:
             continue
 
         for item in r.json().get("results", []):
-            # confirm package
-            packages = {pad(p["package_ndc"]) for p in item.get("packaging", [])
-                        if p.get("package_ndc")}
-            if ndc in packages:
-                # return dict with information
+            # This already walked every package to confirm the NDC matches, then
+            # threw the packaging away. Keep the matched one: NADAC prices per
+            # UNIT, but a wholesaler sells bottles, so "order 1,500 EA" is not an
+            # order and "3 x 500 ct" is.
+            match = next((pk for pk in item.get("packaging", [])
+                          if pk.get("package_ndc") and pad(pk["package_ndc"]) == ndc), None)
+            if match:
                 return {
                     "generic_name": item.get("generic_name", ""),
                     "brand_name": item.get("brand_name", ""),
@@ -72,8 +84,18 @@ def lookup(ndc: str, timeout: int | None = None) -> dict | None:
                     "labeler": item.get("labeler_name", ""),
                     "marketing_category": item.get("marketing_category", ""),
                     "n_ingredients": len(item.get("active_ingredients", []) or []),
+                    "pack_desc": match.get("description", ""),
+                    "pack_size": packsize(match.get("description", "")),
                 }
     return None
+
+
+def history(ndc: str, db: str | None = None) -> list[tuple[str, float]]:
+    ndc = ndc.strip().zfill(11)
+    with closing(sqlite3.connect(db or _config().db)) as conn:
+        return [(d, float(p)) for d, p in conn.execute(
+            "SELECT as_of_date, unit_price FROM nadac"
+            " WHERE ndc = ? AND unit_price != '' ORDER BY as_of_date", (ndc,))]
 
 
 def local(ndc: str, db: str | None = None) -> dict | None:

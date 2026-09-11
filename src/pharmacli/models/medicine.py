@@ -1,6 +1,6 @@
 # turns row of text into dataclass while using the code
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, datetime
 # for price
 from decimal import Decimal, InvalidOperation
@@ -89,9 +89,10 @@ class Medicine:
     generic: Price | None
     asofdate: date | None
     # where this record came from,and used compare false for deduping errors
-    source_line: int | None = field(default=None, compare=False)
-    # source of the item
-    source: str = field(default="csv", compare=False)
+    # REMOVED: source_line and source. Neither was ever read. `source` was also
+    # a lie -- arow() hardcoded "csv" for API records too, so the one field
+    # claiming to track provenance did not. Skip diagnostics use
+    # SkippedRow.line, which is a different object and still live.
 
     # if Medicine and if not
     @classmethod
@@ -134,8 +135,6 @@ class Medicine:
             rateclass=row["Classification for Rate Setting"].strip(),
             generic=generic,
             asofdate=asofd,
-            source_line=line_no,
-            source="csv",
         )
 
     # writing row back out as a list
@@ -169,6 +168,9 @@ class Medicine:
         return "Y" if value else "N"
 
     @property
+    # REACHED BY NAME, not by call: rules/sort.py maps --by price/date onto
+    # these through attrgetter(), so a grep or an AST pass reports both as
+    # dead. They are not. `pharmacli sort --by price` breaks without them.
     def sortprice(self) -> Decimal:
         return self.price.unitprice
 

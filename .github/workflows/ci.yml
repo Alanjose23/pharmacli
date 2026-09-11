@@ -56,7 +56,10 @@ jobs:
             # the analysis tests the numpy imports to verify that it works
             - name: Install analysis extra and run tests
               run: |
-                  pip install -e ".[analysis]"
+                  # [serve] too, so the API tests actually run. NOT [track]:
+                  # mlflow across a 3-version matrix would dominate CI time, and
+                  # test_track.py is written to need no mlflow import.
+                  pip install -e ".[analysis,serve]"
                   pytest -q
 
             - name: Verify Vectorization Benchmark

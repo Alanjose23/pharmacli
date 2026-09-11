@@ -1,20 +1,15 @@
-
-
 from collections.abc import Sequence
 from operator import attrgetter
 from typing import ClassVar, Literal
 
 from pharmacli.models.medicine import Medicine
-from pharmacli.protocols import BaseRule, RuleRes
-from pharmacli.registry import RULES
+from pharmacli.protocols import RuleOut
 
 # cli py rules to order by dedup
 DedupK = Literal["row", "ndc", "ndc+date"]
 
-# register dedup rule and add the previous iterations to the code
-@RULES.register("dedup")
-class DedupRule(BaseRule):
-    """Remove duplicate records by row, NDC, or NDC+effective date."""
+class DedupRule:
+    description = "Remove duplicate records by row, NDC, or NDC+effective date."
 
     name: ClassVar[str] = "dedup"
 
@@ -24,7 +19,7 @@ class DedupRule(BaseRule):
     def __init__(self, key: DedupK = "row") -> None:
         self.key: DedupK = key
 
-    def apply(self, records: Sequence[Medicine]) -> RuleRes:
+    def apply(self, records: Sequence[Medicine]) -> RuleOut:
         if self.key == "row":
 
             kept: tuple[Medicine, ...] = tuple(dict.fromkeys(records))
@@ -52,7 +47,7 @@ class DedupRule(BaseRule):
 
         removed = len(records) - len(kept)
         # returns what should be kept and what should be removed
-        return RuleRes(records=kept, removed = removed)
+        return kept, removed
 
 
 

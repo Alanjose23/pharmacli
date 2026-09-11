@@ -4,8 +4,7 @@ from typing import ClassVar, Final
 
 from pharmacli.err import RuleError
 from pharmacli.models.medicine import Medicine
-from pharmacli.protocols import BaseRule, RuleRes
-from pharmacli.registry import RULES
+from pharmacli.protocols import RuleOut
 
 # possible sorted columns
 COLUMNS: Final[dict[str,str]] = {
@@ -16,11 +15,9 @@ COLUMNS: Final[dict[str,str]] = {
 }
 
 
-@RULES.register("sort")
-class SortRules(BaseRule):
-    """Order records by description, NDC, price, or effective date."""
-    # the docstring is not decoration: Registry.describeall() reads its first
-    # line, so without one `pharmacli rules` prints a blank description
+class SortRules:
+    # not decoration: rules.describe() prints this for `pharmacli rules`
+    description = "Order records by description, NDC, price, or effective date."
 
     name: ClassVar[str] = "sort"
 
@@ -34,12 +31,12 @@ class SortRules(BaseRule):
 
 # built sort from identified column
     # apply rule to sequence of medicines
-    def apply(self, records: Sequence[Medicine]) -> RuleRes:
+    def apply(self, records: Sequence[Medicine]) -> RuleOut:
         # determine ordering
 
         # arrange by order
         key = attrgetter(COLUMNS[self.by])
         ordered = tuple(sorted(records, key = key))
 
-        return RuleRes(records=ordered, removed = 0)
+        return ordered, 0                # sorting drops nothing, ever
 # return rule result
