@@ -6,7 +6,6 @@ import os
 import time
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 
-from pharmacli.err import FetchError
 from pharmacli.collect import PAGE_SIZE, fetch_async, fetch_multiproc, fetch_sequential, fetch_threaded, to_row
 from pharmacli.models.medicine import Medicine
 
@@ -141,11 +140,9 @@ VECTOR_ROWS = 1_000_000
 # numpy vector analysis - price change analysis, week per week
 
 def bench_vector(rows: int = VECTOR_ROWS) -> list[tuple]:
-    try:
-        import numpy as np
-        import pandas as pd
-    except ImportError:
-        raise FetchError("numpy workload needs: pip install -e \".[analysis]\"") from None
+    # missing numpy/pandas reaches cli.main, which names the package (exit 2)
+    import numpy as np
+    import pandas as pd
 
     rng = np.random.default_rng(0)
     # prices that mostly hold

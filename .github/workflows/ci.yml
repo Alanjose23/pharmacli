@@ -47,7 +47,7 @@ jobs:
                       fh.write("\n".join(rows) + "\n")
                   EOF
                   pharmacli clean fixture.csv --rule dedup --dryrun
-                  pharmacli sort fixture.csv --by date --dryrun
+                  pharmacli clean fixture.csv --rule sort:by=date --dryrun
 
             
             - name: Verify Benchmark (CPU workload only)
@@ -59,7 +59,7 @@ jobs:
                   # [serve] too, so the API tests actually run. NOT [track]:
                   # mlflow across a 3-version matrix would dominate CI time, and
                   # test_track.py is written to need no mlflow import.
-                  pip install -e ".[analysis,serve]"
+                  pip install -e ".[analysis,serve,rag]"
                   pytest -q
 
             - name: Verify Vectorization Benchmark

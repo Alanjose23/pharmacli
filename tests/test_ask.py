@@ -58,7 +58,10 @@ def tnolabelcollides():
         assert ranked[0][0] > ranked[1][0], f"{label!r} ties with {ranked[1][1]!r}"
 
 
-def tneverguesses():
+def tneverguesses(monkeypatch):
+    # with the documents lane unavailable, a clinical question still gets the
+    # menu, never a price answer
+    monkeypatch.setattr(ask, "_documents", lambda q: None)
     for q in ("what dose of lisinopril should I give",
               "is this safe with warfarin",
               "what is the maximum daily dose"):
@@ -67,35 +70,54 @@ def tneverguesses():
         assert "no question matches" in ask.answer(q)[1][0]
 
 
+def tdocumentquestionsleavethepricelane():
+    documents = ("what are the contraindications for this drug",
+                 "what drug interactions does warfarin have",
+                 "what is the boxed warning for this drug",
+                 "can this drug be crushed",
+                 "how does CMS calculate NADAC",
+                 # a reimbursement question full of price vocabulary: the shelf
+                 # questions must not claim it (biz-04 in the answer key)
+                 "how many pharmacies have to report a price before the NADAC help desk will review it",
+                 "what is the deadline for a MAC appeal in New York",
+                 "what is the capital of France",
+                 "how should I store this drug",
+                 "does medicaid cover this drug")
+    price = [label for label, _, _ in ask.QUESTIONS] + [
+        "which drugs am I losing money on", "what is this drug 59148001013",
+        "what am I losing money on right now",
+        "which drugs in my store are losing money",
+        "what should I order for the store this week",
+        "when do medicaid prices change next",
+        "what am I losing money on with medicaid"]
+    for q in documents:
+        assert ask.lane(q) == "documents", q
+    for q in price:
+        assert ask.lane(q) == "price", q
+
+
+def tdocumentslanehandsofftorag(monkeypatch):
+    monkeypatch.setattr(ask, "_documents", lambda q: ["Avoid below eGFR 30 [1].", "", "[1] X"])
+    assert ask.answer("what are the contraindications for this drug") == (
+        "documents", ["Avoid below eGFR 30 [1].", "", "[1] X"])
+
+
+def tdocumentslaneoutagesaysso(monkeypatch):
+    # a doc-word question that ALSO scores highly against a price label must
+    # not silently fall back to a plain "no question matches" -- the outage
+    # has to say so, not look like an unrecognized question
+    monkeypatch.setattr(ask, "_documents", lambda q: None)
+    label, lines = ask.answer("what is this drug dosage")
+    assert label == ""
+    assert lines[0].startswith("no question matches")
+    assert lines[1] == ask.DOCUMENTS_DOWN
+
+
 def tpartialquestionsstillmatch():
     for short, expect in (("losing money", "what am I losing money on"),
                           ("order this week", "what should I order this week"),
                           ("capital sitting dead", "what capital is sitting dead")):
         assert ask.match(short)[0][1] == expect
-
-
-def texplainquotesverbatim():
-    out = ask.explain(topic="MATERIAL_SWING")
-    assert out[0].startswith("cli.py:")            # provenance first
-    body = "\n".join(out)
-    # text that exists in cli.py and nowhere else, reproduced exactly
-    assert "median swing $0.09, p95 $0.69" in body
-    assert "The dispensing fee ($10.64) was the obvious candidate" in body
-
-
-def texplainadmitsignorance():
-    out = ask.explain(topic="quantum chromodynamics")
-    assert "nothing in the source explains" in out[0]
-
-
-def tchunksarescopedtoblocks():
-    ch = ask.chunks()
-    assert 40 < len(ch) < 400
-    # the MATERIAL_SWING measurement must sit in ONE chunk with its conclusion,
-    # not be split from it -- that is what by-function chunking got wrong
-    hit = [t for _, _, t in ch if "median swing $0.09" in t]
-    assert len(hit) == 1 and "per-drug timing is worth CENTS" in hit[0]
-    assert not any(f == "ask.py" for f, _, _ in ch)     # no self-reference
 
 
 def targscomeoutofthesentence():
@@ -158,5 +180,94 @@ def twritedrugsonerowperdrug(tmp_path):
 
     r = rows[SINKING]
     assert float(r["your_cost"]) == 1.5 and float(r["nadac_unit"]) == 1.0
-    # break-even is the chat's own string, not a second calculation of it
-    assert r["breakeven"] and r["breakeven"] in "\n".join(ask.breakeven_qty(db=db, ndc=SINKING))
+    # the same breakeven() the CLI prints, not a second calculation of it
+    from pharmacli.cli import breakeven
+    from pharmacli.config import load
+    assert r["breakeven"] == breakeven(1.5, 1.0, load().dispensing_fee, "EA")
+
+
+def tnewquestionsrouteandsurviveoffline(monkeypatch):
+    import httpx
+
+    from pharmacli import safety
+
+    assert ask.match("which drugs are recalled")[0][1] == "which stocked drugs are recalled"
+    assert ask.match("which brands have a cheaper generic")[0][1] == "which brands have cheaper generics"
+    assert ask.match("what is on my shelf")[0][1] == "what is on my shelf"
+    assert ask.match("what am I losing money on")[0][1] == "what am I losing money on"
+
+    def offline(db=None, shelf=None):
+        raise httpx.ConnectError("offline")
+
+    monkeypatch.setattr(safety, "shelf_recalls", offline)
+    assert ask.stocked_recalls()[0].startswith("openFDA recall search failed")
+
+
+def tfinddrugworkswithoutthenlpmodule(tmp_path, monkeypatch):
+    import sys
+
+    # a core install: nlp.py needs numpy and sklearn, so it cannot import
+    monkeypatch.setitem(sys.modules, "pharmacli.nlp", None)
+    out = ask.find_drug(shelf(tmp_path), f"drug {SINKING}")
+    assert out[0].startswith("keyword matches")
+    assert f"  DRUG {SINKING}   {SINKING}" in out
+
+
+def tanswerusesthepassedshelfinsteadofthedatabase(tmp_path):
+    db = shelf(tmp_path)
+    # the saved shelf has SINKING at 1.50 against a NADAC price of 1.00
+    _, saved = ask.answer("what am I losing money on", db=db)
+    assert any("1 positions cost more than NADAC" in line for line in saved)
+
+    # an uploaded file carrying only FINE, priced below NADAC, is clean
+    upload = ({FINE: 1.00}, {FINE: (100.0, 200.0)})
+    _, uploaded = ask.answer("what am I losing money on", db=db, shelf=upload)
+    assert any("nothing underwater" in line for line in uploaded)
+
+
+def tshelfsummarycountsthepassedshelf(tmp_path):
+    db = shelf(tmp_path)
+    upload = ({FINE: 1.00}, {FINE: (100.0, 200.0)})
+    assert ask.shelf_summary(db=db, shelf=upload)[0] == "1 positions with a recorded cost"
+
+
+def tunpricedlistsndcswithnopriceinthenewestfile(tmp_path):
+    db = shelf(tmp_path)
+    upload = ({SINKING: 1.50, "00000000099": 2.00},
+              {SINKING: (100.0, 200.0), "00000000099": (10.0, 5.0)})
+    out = ask.unpriced(db=db, shelf=upload)
+    assert "1 of 2 NDCs have no price" in out[0]
+    assert "  00000000099" in out
+
+
+def tshelfchangescomparesanuploadwiththesavedshelf(tmp_path):
+    db = shelf(tmp_path)          # saved: SINKING at 1.50, FINE at 1.00
+    upload = ({SINKING: 1.75, "00000000099": 2.00},
+              {SINKING: (100.0, 200.0), "00000000099": (10.0, 5.0)})
+    out = "\n".join(ask.shelf_changes(db=db, shelf=upload))
+    assert "1 NDC in the file is not on your saved shelf" in out
+    assert "00000000099" in out                      # added
+    assert "1 NDC on your saved shelf is not in the file" in out
+    assert FINE in out                               # dropped
+    assert "+0.25000" in out                         # SINKING cost moved 1.50 -> 1.75
+
+
+def tshelfchangesneedsafile(tmp_path):
+    out = ask.shelf_changes(db=shelf(tmp_path))
+    assert out == ["attach an inventory CSV first, or run: pharmacli check FILE.csv"]
+
+
+def tsuggestionsskipemptylistsandnamerealquestions(tmp_path):
+    db = shelf(tmp_path)
+    labels = {label for label, _, _ in ask.QUESTIONS}
+
+    # an upload holding only FINE: priced below NADAC, so nothing to appeal
+    got = ask.suggestions(db=db, shelf=({FINE: 1.00}, {FINE: (100.0, 200.0)}))
+    assert all(s["q"] in labels for s in got)
+    assert len(got) <= 4
+    assert not any(s["q"] == "what am I losing money on" for s in got)
+
+    # an upload holding SINKING: costs more than NADAC, so the appeal leads
+    got = ask.suggestions(db=db, shelf=({SINKING: 1.50}, {SINKING: (100.0, 200.0)}))
+    assert got[0]["q"] == "what am I losing money on"
+    assert "$" in got[0]["hint"]

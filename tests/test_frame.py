@@ -50,13 +50,6 @@ def tweekchange(db):
     assert gapped.loc[gapped.ndc == "00000000001", "wow"].isna().all()
 
 
-def tgencomp(db):
-    bg = frame.brand_generic(frame.load(db))
-    assert list(bg["ndc"]) == ["00000000002"]
-    assert bg["ratio"].iloc[0] == pytest.approx(10.0)  # 20.00 / 2.00
-
-
-
 def tknownval():
     assert frame.gini([5, 5, 5, 5]) == pytest.approx(0.0)  # perfectly equal
     assert frame.gini([0, 0, 0, 10]) == pytest.approx(0.75)  # (n-1)/n for one holder

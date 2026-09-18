@@ -9,9 +9,6 @@ import pandas as pd
 from pharmacli.config import load as _config
 
 
-# B = brand, B-ANDA = auth. generic, B-BIO = biologic
-BRAND = ("B", "B-ANDA", "B-BIO")
-
 # columns that are repeated for all rows
 CATEGORICAL = (
     "ndc",
@@ -62,17 +59,6 @@ def weekly_change(df: pd.DataFrame) -> pd.DataFrame:
 
     # fixes possible leaks if weeks dont add up to one 1 week, aka week 3 vs week 5 data
     out.loc[grouped["as_of_date"].diff() != WEEK, "wow"] = np.nan
-    return out
-
-# brand rows carrying gen. price with ratio
-def brand_generic(df: pd.DataFrame) -> pd.DataFrame:
-    # B and B-ANDA
-    out = df[
-        df["rate_class"].isin(BRAND)
-        & df["generic_price"].notna()
-        & (df["generic_price"] > 0)
-    ].copy()
-    out["ratio"] = out["unit_price"] / out["generic_price"]
     return out
 
 # gini for every ndc movement, 0 = ndc moves price equally, 1 does it all

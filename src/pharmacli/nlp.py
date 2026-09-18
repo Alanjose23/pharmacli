@@ -1,8 +1,9 @@
 import logging
-import re
 
 import numpy as np
 
+# lives in ask.py so find-a-drug works on a core install without numpy
+from pharmacli.ask import keyword_search  # noqa: F401
 from pharmacli.model import SEED
 
 log = logging.getLogger(__name__)
@@ -123,20 +124,6 @@ def baseline(db: str | None = None) -> dict:
 
 EMB_MODEL = "sentence-transformers/all-MiniLM-L6-v2"   # 22M params, 384-dim
 EMB_CACHE = "data/desc-embeddings.npz"
-
-
-def keyword_search(texts: list[str], q: str, k: int = 5) -> list[str]:
-    ql = q.strip().lower()
-    terms = [t for t in re.split(r"\s+", ql) if t]
-    hits = []
-    for t in texts:
-        key = t.lower()
-        if key.startswith(ql):
-            hits.append((1, t))
-        elif terms and all(term in key for term in terms):
-            hits.append((2, t))
-    hits.sort(key=lambda x: (x[0], x[1]))
-    return [t for _, t in hits[:k]]
 
 
 def embed(texts: list[str], cache: str = EMB_CACHE) -> np.ndarray:

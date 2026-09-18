@@ -225,11 +225,3 @@ async def fetch_async(pages: list[int], workers: int = 10, on_page=None) -> list
 
     return out
 
-
-# function lookup
-MODELS = {
-    "sequential": fetch_sequential,
-    "threaded": fetch_threaded,
-    "multiproc": fetch_multiproc,
-    "asyncio": fetch_async,
-}

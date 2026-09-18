@@ -28,30 +28,24 @@ def parsedate(raw: str) -> date | None:
     return None
 
 
-# a price dataclass, was complicated for formatting and making sure that the code was functional
-@dataclass(frozen=True, slots=True)
-class PriceRes:
-    value: Decimal | None
-    reason: str | None
-
-#price parsing with possible status changes for all possible reasons: missing, malformed or impossible price
-def parseprice(raw: str) -> PriceRes:
+# (price, None) or (None, why): missing, malformed or impossible price
+def parseprice(raw: str) -> tuple[Decimal | None, str | None]:
     text = raw.strip()
     if not text:
-        return PriceRes(None, "missing price")
+        return None, "missing price"
 
     try:
         value = Decimal(text)
     except InvalidOperation:
-        return PriceRes(None, "malformed price")
+        return None, "malformed price"
 
     if not value.is_finite():
-        return PriceRes(None, "malformed price")
+        return None, "malformed price"
 
     if value <= 0:
-        return PriceRes(None, "non-positive price")
+        return None, "non-positive price"
 
-    return PriceRes(value, None)
+    return value, None
 
 
 # returns if it is an otc drug, makes sure a value is assigned
@@ -88,11 +82,6 @@ class Medicine:
     rateclass: str
     generic: Price | None
     asofdate: date | None
-    # where this record came from,and used compare false for deduping errors
-    # REMOVED: source_line and source. Neither was ever read. `source` was also
-    # a lie -- arow() hardcoded "csv" for API records too, so the one field
-    # claiming to track provenance did not. Skip diagnostics use
-    # SkippedRow.line, which is a different object and still live.
 
     # if Medicine and if not
     @classmethod
@@ -104,7 +93,7 @@ class Medicine:
         asofd = parsedate(row["As of Date"])
         otc = parseotc(row["OTC"])
         genrow = row["Corresponding Generic Drug NADAC Per Unit"].strip()
-        trueprice = parseprice(rprice)
+        unitprice, why = parseprice(rprice)
 
         if not ndc:
             return SkippedRow(line_no, "Missing NDC")
@@ -112,19 +101,19 @@ class Medicine:
             return SkippedRow(line_no, "Missing Description")
 
         # passing on the specific reason
-        if trueprice.value is None:
-            return SkippedRow(line_no, trueprice.reason or "malformed price")
+        if unitprice is None:
+            return SkippedRow(line_no, why or "malformed price")
 
         # a generic price should not kill the row
-        genprice = parseprice(genrow)
-        if genprice.value is not None:
+        genprice, _ = parseprice(genrow)
+        if genprice is not None:
             gendate = parsedate(row["Corresponding Generic Drug Effective Date"])
-            generic = Price(unitprice=genprice.value, unit=row["Pricing Unit"].strip(),effective_date=gendate)
+            generic = Price(unitprice=genprice, unit=row["Pricing Unit"].strip(),effective_date=gendate)
         else:
             generic = None
 
         drug = Drug(ndc=ndc, description=desc)
-        price = Price(unitprice=trueprice.value, unit=row["Pricing Unit"].strip(),effective_date=dateeff)
+        price = Price(unitprice=unitprice, unit=row["Pricing Unit"].strip(),effective_date=dateeff)
 
         return cls(
             drug=drug,
@@ -167,14 +156,8 @@ class Medicine:
             return ""
         return "Y" if value else "N"
 
-    @property
-    # REACHED BY NAME, not by call: rules/sort.py maps --by price/date onto
-    # these through attrgetter(), so a grep or an AST pass reports both as
-    # dead. They are not. `pharmacli sort --by price` breaks without them.
-    def sortprice(self) -> Decimal:
-        return self.price.unitprice
-
-    # used for sorting date for ease of access
+    # REACHED BY NAME, not by call: rules/sort.py maps --by date onto this
+    # through attrgetter(), so a grep reports it dead. It is not.
     @property
     def sort_date(self) -> tuple[bool, date]:
         if self.price.effective_date is None:

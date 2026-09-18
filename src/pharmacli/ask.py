@@ -1,23 +1,19 @@
-import collections
 import difflib
 import functools
-import io
-import json
+import inspect
 import logging
-import math
 import pathlib
 import re
 import sys
-import tokenize
 from collections.abc import Callable
 
+# claims.py imports nothing heavier than store and enrich, so no lazy import
+from pharmacli.claims import generic_savings
 from pharmacli.config import load
 
 log = logging.getLogger(__name__)
 
-# identifiers and words, lowercased. Catches MATERIAL_SWING and age_days whole,
-# which is the point -- those rare exact tokens are what the "why" questions
-# actually turn on.
+# identifiers and words, lowercased
 _WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]+")
 
 
@@ -29,14 +25,42 @@ def _words(s: str) -> list[str]:
 # lisinopril should I give" scores against "what is on my shelf" on the word
 # "what" alone and gets ANSWERED -- a clinical question served a shelf total.
 # Matching has to turn on content words only.
-_STOP = frozenset("""
-what is the a an on my of do does this that i am are should would can it to for
-in and me you how when which be by at with was were will not no yes get give
-""".split())
+_STOP = frozenset((
+    "what is the a an on my of do does this that i am are should would can it to for "
+    "in and me you how when which be by at with was were will not no yes get give"
+).split())
 
 
 def _key(s: str) -> set:
     return set(_words(s)) - _STOP
+
+
+# An NDC inside a sentence: 11 digits, or hyphenated / spaced. Shared by the
+# browser chat and the documents lane.
+NDC = re.compile(r"\d[\d\s-]{9,}\d")
+
+
+# Words only a package insert or a reimbursement document can answer. Checked
+# before the price matcher: "what are the contraindications for this drug"
+# shares "drug" with "what is this drug" and scored 1.0 against it. Measured on
+# every label in QUESTIONS and every phrase in test_ask: none contain these, so
+# price routing is unchanged. A Jaccard rescore was tried first and still sent
+# the contraindications question to prices at 0.50.
+_DOC_WORDS = frozenset((
+    "dose doses dosage dosing contraindication contraindications interaction "
+    "interactions warning warnings boxed adverse reaction reactions side effects "
+    "pregnancy pregnant lactation breastfeeding pediatric geriatric renal hepatic "
+    "kidney liver impairment overdose overdosage indication indications indicated "
+    "storage store stored label insert crush crushed administration missed "
+    "cms medicaid mac appeal appeals pbm reimbursement methodology regulation statute cfr"
+).split())
+
+
+# Pricing-flavoured subset of _DOC_WORDS: "store", "medicaid" and friends show
+# up in real price questions too ("which drugs in my store are losing money"),
+# so unlike the rest of _DOC_WORDS they must not override a strong price match
+# outright -- lane() only lets them win when that match is thin.
+_BIZ_WORDS = frozenset("store label mac appeal appeals medicaid reimbursement pbm cms".split())
 
 
 # ── the money lane ───────────────────────────────────────────────────────────
@@ -44,9 +68,9 @@ def _key(s: str) -> set:
 # worklist questions slice cli.format_worklists rather than re-wording it, so
 # `ask` and `today` cannot drift.
 
-def _worklists(db, within=14, dead_days=90):
+def _worklists(db, within=14, dead_days=90, shelf=None):
     from pharmacli.cli import worklists
-    return worklists(db or load().db, within, dead_days)
+    return worklists(db or load().db, within, dead_days, shelf=shelf)
 
 
 def _section(w, tag, within=14, dead_days=90) -> list[str]:
@@ -58,20 +82,20 @@ def _section(w, tag, within=14, dead_days=90) -> list[str]:
     return lines[:4] + lines[i:j]
 
 
-def underwater(db=None) -> list[str]:
-    w = _worklists(db)
+def underwater(db=None, shelf=None) -> list[str]:
+    w = _worklists(db, shelf=shelf)
     return [w["error"]] if "error" in w else _section(w, "APPEAL")
 
 
 # Fixed horizons. `today --within` and `reorder --within` already take the
 # knob; a question interface the browser cannot pass flags to does not need it.
-def buy_worklist(db=None) -> list[str]:
-    w = _worklists(db)
+def buy_worklist(db=None, shelf=None) -> list[str]:
+    w = _worklists(db, shelf=shelf)
     return [w["error"]] if "error" in w else _section(w, "BUY")
 
 
-def dead_stock(db=None) -> list[str]:
-    w = _worklists(db)
+def dead_stock(db=None, shelf=None) -> list[str]:
+    w = _worklists(db, shelf=shelf)
     return [w["error"]] if "error" in w else _section(w, "CLEAR")
 
 
@@ -87,12 +111,13 @@ def next_repricing(db=None) -> list[str]:
             "the weekly file carrying it is dated that Wednesday."]
 
 
-def shelf_summary(db=None) -> list[str]:
+def shelf_summary(db=None, shelf=None) -> list[str]:
     from pharmacli.store import connect, costs, newest_week, stock
 
     conn = connect(db or load().db)
     try:
-        week, mine, qty = newest_week(conn), costs(conn), stock(conn)
+        week = newest_week(conn)
+        mine, qty = shelf if shelf else (costs(conn), stock(conn))
     finally:
         conn.close()
     vol = sum(1 for v in qty.values() if v[1])
@@ -194,29 +219,26 @@ def reorder_plan(db=None, ndc="") -> list[str]:
     return out
 
 
-def breakeven_qty(db=None, ndc="") -> list[str]:
-    from pharmacli.cli import breakeven
-
-    got = _drug(db, ndc)
-    if not got:
-        return [NOT_FOUND.format(ndc)]
-    d, cost, _, _ = got
-    if cost is None:
-        return [f"{d['description']}", "  no acquisition cost recorded for this NDC."]
-    fee = load().dispensing_fee
-    # breakeven returns a STRING ("ANY qty", "never"); relay it, never compute on it
-    return [f"{d['description']}",
-            f"  your cost ${cost:.5f} vs NADAC ${float(d['unit_price']):.5f}",
-            f"  break-even at ${fee:.2f} dispensing fee:  "
-            f"{breakeven(cost, float(d['unit_price']), fee, d['pricing_unit'])}"]
-
-
 @functools.lru_cache(maxsize=1)
 def _embedder():
     from sentence_transformers import SentenceTransformer
 
     from pharmacli.nlp import EMB_MODEL
     return SentenceTransformer(EMB_MODEL)
+
+
+def keyword_search(texts: list[str], q: str, k: int = 5) -> list[str]:
+    ql = q.strip().lower()
+    terms = [t for t in re.split(r"\s+", ql) if t]
+    hits = []
+    for t in texts:
+        key = t.lower()
+        if key.startswith(ql):
+            hits.append((1, t))
+        elif terms and all(term in key for term in terms):
+            hits.append((2, t))
+    hits.sort(key=lambda x: (x[0], x[1]))
+    return [t for _, t in hits[:k]]
 
 
 def find_drug(db=None, phrase="") -> list[str]:
@@ -239,120 +261,126 @@ def find_drug(db=None, phrase="") -> list[str]:
         hits = semantic_search(texts, embed(texts), _embedder(), phrase)
         out = [f"semantic matches for {phrase!r}:"]
         out += [f"  {s:.3f}  {t}   {ndcs[t]}" for t, s in hits]
-    except Exception:                       # no [nlp] extra, or no cached vectors
-        from pharmacli.nlp import keyword_search
+        out.append("  scores are similarity, NOT confidence that this is your drug.")
+    except Exception:                       # no [analysis,nlp] extras, or no cached vectors
         names = keyword_search(texts, phrase)
         out = [f"keyword matches for {phrase!r}"
-               " (install .[nlp] for semantic search):"]
+               " (install .[analysis,nlp] to match by meaning):"]
         out += [f"  {t}   {ndcs[t]}" for t in names] or ["  nothing matched"]
-    out.append("  scores are similarity, NOT confidence that this is your drug.")
     return out
 
 
-def model_report(db=None) -> list[str]:
-    p = pathlib.Path(load().model_path).with_suffix(".json")
-    if not p.exists():
-        return ["no model promoted yet -- run `pharmacli sweep`"]
+def stocked_recalls(db=None, shelf=None) -> list[str]:
+    import httpx
+
+    from pharmacli.safety import shelf_recalls
+
     try:
-        c = json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        log.warning("unreadable model sidecar %s: %s", p, exc)
-        return [f"unreadable model sidecar {p}"]
-    def r(x, n=4):                       # 17 digits of PR-AUC is not an answer
-        return f"{x:.{n}f}" if isinstance(x, (int, float)) else x
+        return shelf_recalls(db, shelf=shelf)
+    except httpx.HTTPError as exc:           # the chat must answer, not crash, offline
+        return [f"openFDA recall search failed: {exc}"]
 
-    lift = ""
-    if isinstance(c.get("test_pr_auc"), float) and c.get("baseline_pr_auc"):
-        lift = f"   ({c['test_pr_auc'] / c['baseline_pr_auc']:.1f}x the bar)"
-    out = [f"{c.get('name')} v{c.get('version')}   trained {c.get('trained_at')}",
-           f"  test PR-AUC   {r(c.get('test_pr_auc'))}{lift}",
-           f"  validation    {r(c.get('val_pr_auc'))}",
-           f"  {c.get('baseline_name', 'baseline')}  {r(c.get('baseline_pr_auc'))}",
-           f"  acts above p = {r(c.get('threshold'), 3)}",
-           f"  panel {c.get('data_md5')}",
-           "",
-           "it REFUSES anything outside these measured ranges:"]
-    for k, (lo, hi) in (c.get("bounds") or {}).items():
-        out.append(f"    {k:<16} {r(lo, 2)} .. {r(hi, 2)}")
-    for k, v in (c.get("categories") or {}).items():
-        out.append(f"    {k:<16} {', '.join(map(str, v))}")
+
+def unpriced(db=None, shelf=None) -> list[str]:
+    w = _worklists(db, shelf=shelf)
+    if "error" in w:
+        return [w["error"]]
+    if not w["unpriced"]:
+        return [f"every one of your {w['priced']:,} positions has a price "
+                f"in the {w['week']} file"]
+    out = [f"{len(w['unpriced']):,} of {w['priced']:,} NDCs have no price in the "
+           f"{w['week']} file -- CMS stopped pricing them, or the NDC is wrong:"]
+    out += [f"  {n}" for n in w["unpriced"][:20]]
+    if len(w["unpriced"]) > 20:
+        out.append(f"  ... {len(w['unpriced']) - 20} more")
     return out
 
 
-# ── the rationale lane ───────────────────────────────────────────────────────
+# What a restock changes: which NDCs the file adds, which it drops, and where a
+# cost moved. Ranked by money, like every other worklist.
+def shelf_changes(db=None, shelf=None) -> list[str]:
+    from pharmacli.store import connect, costs, newest_week, stock
 
-def _comment_blocks(src: str) -> list[tuple[int, int, str]]:
-    blocks: list[tuple[int, int, str]] = []
-    run: list[str] = []
-    start, prev = 0, -2
-    for tok in tokenize.generate_tokens(io.StringIO(src).readline):
-        if tok.type != tokenize.COMMENT:
-            continue
-        line = tok.start[0]
-        if line != prev + 1:                        # a gap ends the block
-            if run:
-                blocks.append((start, prev, "\n".join(run)))
-            run, start = [], line
-        run.append(tok.string.lstrip("#").strip())
-        prev = line
-    if run:
-        blocks.append((start, prev, "\n".join(run)))
-    return blocks
+    if not shelf:
+        return ["attach an inventory CSV first, or run: pharmacli check FILE.csv"]
+    mine, qty = shelf
+    conn = connect(db or load().db)
+    try:
+        saved_cost, saved_qty = costs(conn), stock(conn)
+        week = newest_week(conn)
+        named = dict(conn.execute("SELECT ndc, description FROM nadac WHERE as_of_date = ?",
+                                  (week,))) if week else {}
+    finally:
+        conn.close()
 
+    def name(ndc: str) -> str:
+        return str(named.get(ndc, "(not in the NADAC file)"))[:34]
 
-# a comment block documents the thing UNDER it, and that name is usually absent
-# from the prose: the MATERIAL_SWING block never types "MATERIAL_SWING", it just
-# explains it. Without this, asking for a constant by name finds the code that
-# REFERENCES it rather than the measurement that sets it.
-_DEFINES = re.compile(r"^(?:def|class)\s+(\w+)|^([A-Z_][A-Z0-9_]*)\s*[:=]")
+    def head(tag: str, n: int, one: str, many: str) -> str:
+        return f"{tag:<9}{n:,} {one if n == 1 else many}"
 
+    added = sorted(((mine[n] * (qty.get(n, (None, None))[1] or 0), n)
+                    for n in mine if n not in saved_cost), reverse=True)
+    dropped = sorted(((saved_cost[n] * (saved_qty.get(n, (None, None))[0] or 0), n)
+                      for n in saved_cost if n not in mine), reverse=True)
+    moved = sorted(((abs(mine[n] - saved_cost[n]) * (qty.get(n, (None, None))[1] or 0),
+                     mine[n] - saved_cost[n], n)
+                    for n in mine if n in saved_cost and mine[n] != saved_cost[n]),
+                   reverse=True)
 
-def _defined_below(lines: list[str], end: int) -> str:
-    for probe in lines[end:end + 3]:               # skip at most a blank or two
-        if not probe.strip():
-            continue
-        m = _DEFINES.match(probe.strip())
-        return (m.group(1) or m.group(2)) if m else ""
-    return ""
-
-
-def chunks() -> list[tuple[str, int, str]]:
-    out = []
-    here = pathlib.Path(__file__)
-    for p in sorted(here.parent.rglob("*.py")):
-        if p == here:
-            continue                     # self-reference is noise, not rationale
-        try:
-            src = p.read_text(encoding="utf-8")
-            lines = src.split("\n")
-            # the name goes in the TEXT so it is searchable, and on the front so
-            # a query for it also wins the tf tiebreak against a mere mention
-            # comment blocks only: the package carries no docstrings to index
-            out += [(p.name, ln, f"{_defined_below(lines, end)}\n{t}".strip())
-                    for ln, end, t in _comment_blocks(src) if len(t) > 60]
-        except (OSError, SyntaxError, tokenize.TokenError):
-            continue
+    out = [f"comparing the attached file with your saved shelf "
+           f"({len(saved_cost):,} positions)", ""]
+    out.append(head("ADD", len(added), "NDC in the file is not on your saved shelf",
+                    "NDCs in the file are not on your saved shelf"))
+    for spend, n in added[:5]:
+        out.append(f"         {name(n):<35} {n}   ${spend:,.2f}/month")
+    out.append("")
+    out.append(head("REMOVE", len(dropped), "NDC on your saved shelf is not in the file",
+                    "NDCs on your saved shelf are not in the file"))
+    for value, n in dropped[:5]:
+        out.append(f"         {name(n):<35} {n}   ${value:,.2f} on hand")
+    out.append("")
+    out.append(head("COST", len(moved), "cost changed", "costs changed"))
+    for impact, delta, n in moved[:5]:
+        out.append(f"         {name(n):<35} {n}   {delta:+.5f}/unit  ${impact:,.2f}/month")
     return out
 
 
-def explain(db=None, topic="") -> list[str]:
-    ch = chunks()
-    df: collections.Counter[str] = collections.Counter()
-    for _, _, t in ch:
-        df.update(set(_words(t)))
-    n = len(ch)
-    q = set(_words(topic))
-    scored = sorted(((sum(math.log(n / df[w]) for w in q & set(_words(t))), f, ln, t)
-                     for f, ln, t in ch), reverse=True, key=lambda x: x[0])
-    if not scored or scored[0][0] <= 0:
-        return [f"nothing in the source explains {topic!r}.",
-                "try a constant by name: MATERIAL_SWING, MOVE_EV, DOWN_SHARE, SEED"]
-    s, f, ln, t = scored[0]
-    out = [f"{f}:{ln}", ""] + t.splitlines()
-    others = [f"{f2}:{l2}" for s2, f2, l2, _ in scored[1:4] if s2 > 0]
-    if others:
-        out += ["", f"also relevant: {', '.join(others)}"]
-    return out
+# The chips the chat offers after an upload. Each count comes from the same
+# function that answers the question, so a chip cannot disagree with its answer.
+def suggestions(db=None, shelf=None) -> list[dict]:
+    from pharmacli.claims import generics
+    from pharmacli.store import connect, costs
+
+    w = _worklists(db, shelf=shelf)
+    if "error" in w:
+        return []
+    conn = connect(db or load().db)
+    try:
+        saved = len(costs(conn))
+    finally:
+        conn.close()
+    cheaper = generics(db or load().db, shelf)
+    cheaper = [] if isinstance(cheaper, str) else cheaper
+
+    # (dollars, question, hint) -- dollars rank the chips, 0.0 sorts last
+    ranked = [
+        (w["bleed"], "what am I losing money on",
+         f"{len(w['under']):,} positions · ${w['bleed']:,.2f}/month") if w["under"] else None,
+        (w["capital"], "what capital is sitting dead",
+         f"${w['capital']:,.2f} tied up") if w["dead"] else None,
+        (sum((b - g) * (m or 0) for _, _, b, g, m in cheaper),
+         "which brands have cheaper generics",
+         f"{len(cheaper):,} lines") if cheaper else None,
+        (0.0, "what should I order this week",
+         f"{len(w['buy']):,} due inside 14 days") if w["buy"] else None,
+        (0.0, "what changed since my saved shelf",
+         f"against {saved:,} saved positions") if shelf and saved else None,
+        (0.0, "which drugs have no NADAC price",
+         f"{len(w['unpriced']):,} of {w['priced']:,}") if w["unpriced"] else None,
+    ]
+    live = sorted((r for r in ranked if r), key=lambda r: -r[0])
+    return [{"q": q, "hint": hint} for _, q, hint in live[:4]]
 
 
 # ── the registry ─────────────────────────────────────────────────────────────
@@ -369,12 +397,18 @@ QUESTIONS: list[tuple[str, Callable[..., list[str]], dict]] = [
     ("what has this drug's price done", price_history,    {"ndc": str}),
     ("will this drug's price move",     move_probability, {"ndc": str}),
     ("when should I reorder this drug", reorder_plan,     {"ndc": str}),
-    # off: breakeven question -- uncomment to restore
-    # ("what script size breaks even",    breakeven_qty,    {"ndc": str}),
     ("find a drug by description",      find_drug,        {"phrase": str}),
-    # off: model/why questions -- uncomment to restore
-    # ("what model is deciding this",     model_report,     {}),
-    # ("why does the tool say that",      explain,          {"topic": str}),
+    # Worded against the whole-word matcher: "which drugs are recalled" and "which
+    # brands have a cheaper generic" reach these, and no existing label collides.
+    # "any recalls on my shelf" still reaches the shelf summary ("recalls" is not
+    # "recalled"); stemming would move every other question's routing too.
+    ("which stocked drugs are recalled",   stocked_recalls,  {}),
+    ("which brands have cheaper generics", generic_savings,  {}),
+    # answered about an attached CSV as readily as about the saved shelf
+    # NOT worded with "NADAC" or "price": those are the words reimbursement
+    # questions use, and this label stole two of them from the documents lane
+    ("which stocked drugs are missing a price", unpriced,      {}),
+    ("what changed since my saved shelf",   shelf_changes,    {}),
 ]
 
 
@@ -453,7 +487,6 @@ def menu() -> list[str]:
     out = ["", "pharmacli ask \"<question>\" -- what this can answer:", ""]
     out += [f"  {i:>2}. {label}" for i, (label, _, _) in enumerate(QUESTIONS, 1)]
     out += ["",
-            # "  a question starting with \"why\" always goes to the source comments.",  # off: model/why questions -- uncomment to restore
             "  looking up a drug by name? ask \"find a drug by description\"."]
     return out
 
@@ -476,21 +509,57 @@ def match(question: str) -> list[tuple[float, str, Callable[..., list[str]], dic
 CUTOFF = 0.45
 
 
-def answer(question: str, db=None, **kw) -> tuple[str, list[str]]:
-    # off: model/why questions -- uncomment to restore
-    # "why ..." is always the rationale lane. No label will ever out-score a
-    # literal question word, and explain() is the only entry taking free text.
-    # if _words(question)[:1] == ["why"]:
-    #     return "", explain(db, kw.get("topic") or question)
+def lane(question: str) -> str:
+    words = _key(question)
+    if words & (_DOC_WORDS - _BIZ_WORDS):
+        return "documents"
+    score, label, _, _ = match(question)[0]
+    if score < CUTOFF:
+        return "documents"
+    # a pricing-flavoured word ("store", "medicaid") only claims the question
+    # when the price match is thin; "which drugs in my store are losing money"
+    # shares two words with its label and stays a price question
+    if words & _BIZ_WORDS and len(words & _key(label)) < 2:
+        return "documents"
+    return "price"
 
+
+def _no_match(question: str, ranked: list) -> list[str]:
+    near = [l for s, l, _, _ in ranked[:3] if s > 0.2]   # real matches only
+    out = [f"no question matches {question!r}."]
+    if near:
+        out += ["", "did you mean:"] + [f"  {l}" for l in near]
+    return out + menu()
+
+
+def _documents(question: str) -> list[str] | None:
+    import asyncio
+
+    from pharmacli import rag
+
+    result = asyncio.run(rag.ask_once(question))
+    if result.get("error"):
+        # no corpus, or Chroma / Ollama not running: fall back to the menu
+        # rather than fail a CLI that answers prices without either
+        log.warning("documents lane unavailable: %s", result["error"])
+        return None
+    return rag.format_lines(result)
+
+
+DOCUMENTS_DOWN = ("answers from package inserts and reimbursement documents"
+                   " are unavailable right now -- docker compose up -d chroma ollama")
+
+
+def answer(question: str, db=None, shelf=None, **kw) -> tuple[str, list[str]]:
     ranked = match(question)
     score, label, fn, schema = ranked[0]
-    if score < CUTOFF:
-        near = [l for s, l, _, _ in ranked[:3] if s > 0.2]   # real matches only
-        out = [f"no question matches {question!r}."]
-        if near:
-            out += ["", "did you mean:"] + [f"  {l}" for l in near]
-        return "", out + menu()
+    if lane(question) == "documents":
+        got = _documents(question)
+        if got is not None:
+            return "documents", got
+        out = _no_match(question, ranked)
+        out.insert(1, DOCUMENTS_DOWN)
+        return "", out
 
     # only ask for the args this question actually needs
     args = {}
@@ -506,6 +575,9 @@ def answer(question: str, db=None, **kw) -> tuple[str, list[str]]:
             val = input(f"{name}? ").strip()
         if val not in (None, ""):
             args[name] = cast(val)
+    # an uploaded CSV answers only the questions that read the shelf
+    if shelf and "shelf" in inspect.signature(fn).parameters:
+        args["shelf"] = shelf
     body = fn(db=db, **args)
     while body and not body[0]:          # sections bring their own leading blank
         body.pop(0)

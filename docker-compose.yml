@@ -1,0 +1,35 @@
+# The two services RAG needs. Every port is published on 127.0.0.1 only.
+services:
+  chroma:
+    image: chromadb/chroma:1.5.9
+    ports: ["127.0.0.1:8001:8000"]
+    volumes: [chroma-data:/data]
+    healthcheck:
+      # the image has bash but no curl or wget
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8000 && printf 'GET /api/v2/heartbeat HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q heartbeat <&3"]
+      interval: 5s
+      retries: 20
+
+  ollama:
+    image: ollama/ollama:0.34.0
+    ports: ["127.0.0.1:11434:11434"]
+    volumes: [ollama-models:/root/.ollama]
+    environment:
+      LLM: ${PHARMACLI_LLM:-qwen2.5:3b-instruct}
+      EMBED: ${PHARMACLI_EMBED:-all-minilm:l6-v2}
+    # Serve, wait until it answers, pull both models into the volume (a no-op
+    # once they are there), then mark ready. $$ keeps compose from expanding
+    # the variables itself.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - rm -f /tmp/ready; ollama serve & until ollama list >/dev/null 2>&1; do sleep 1; done; ollama pull "$$LLM" && ollama pull "$$EMBED" && touch /tmp/ready; wait
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/ready"]
+      interval: 10s
+      start_period: 3600s        # the first pull is ~2 GB
+    mem_limit: 4g
+
+volumes:
+  chroma-data:
+  ollama-models:

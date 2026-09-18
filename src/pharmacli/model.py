@@ -173,12 +173,6 @@ def best_threshold(fitted: Pipeline, Xtr, ytr) -> float:
     return float(th[int(np.nanargmax(f1[:-1]))])
 
 
-# REMOVED: cross_validate(). 4-fold TimeSeriesSplit CV over the training
-# period, with no caller anywhere -- track.splits() supersedes it with a
-# three-way temporal split that picks the winner on validation and scores test
-# exactly once.
-
-
 def net_benefit(y_true, proba) -> pd.DataFrame:
     y = np.asarray(y_true, dtype=float)
     p = np.asarray(proba, dtype=float)
@@ -201,11 +195,6 @@ def net_benefit(y_true, proba) -> pd.DataFrame:
             "treat_none": 0.0,
         })
     return pd.DataFrame(rows).set_index("threshold")
-
-
-# REMOVED: calibration(). A calibration_curve wrapper with no caller -- not the
-# CLI, not serve, not track, not either notebook. model.scores() already
-# reports Brier, which is the calibration number that gets looked at.
 
 
 def explain(fitted: Pipeline, X: pd.DataFrame, n: int = 2000):

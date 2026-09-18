@@ -1,0 +1,147 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>pharmacli</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+     color:#1a1a1a;background:#fafafa;display:flex;justify-content:center}
+#app{width:100%;max-width:920px;background:#fff;border:1px solid #e6e6e6;
+     min-height:100vh;display:flex;flex-direction:column}
+#log{flex:1;overflow-y:auto;padding:24px}
+/* the empty state: centred, and the only thing on screen until you ask */
+#empty{height:100%;display:flex;flex-direction:column;align-items:center;
+       justify-content:center;text-align:center;padding:24px}
+h1{font-size:19px;font-weight:600;margin:0 0 8px}
+.sub{color:#8a8a8a;max-width:400px;margin:0 0 28px}
+.try{color:#8a8a8a;font-size:13px;margin-bottom:12px}
+#pills{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:620px}
+.pill{background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:9px 14px;
+      cursor:pointer;font:inherit;color:#1a1a1a}
+.pill:hover{border-color:#b8b8b8;background:#fafafa}
+/* answers are column-aligned ASCII -- monospace or the tables break */
+.msg{margin-bottom:18px}
+.you{text-align:right}
+.you span{background:#f0f0f0;border-radius:12px;padding:8px 14px;display:inline-block}
+.bot pre{font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;
+         white-space:pre-wrap;margin:0;padding:12px 14px;background:#fafafa;
+         border:1px solid #eee;border-radius:8px;overflow-x:auto}
+.label{color:#8a8a8a;font-size:12px;margin-bottom:6px}
+/* the composer */
+form{padding:16px 24px 22px;display:flex;gap:8px}
+#q{flex:1;background:#f5f5f5;border:1px solid #ececec;border-radius:10px;
+   padding:13px 16px;font:inherit;outline:none}
+#q:focus{border-color:#c8c8c8;background:#fff}
+button.send{background:none;border:none;cursor:pointer;color:#9a9a9a;padding:0 8px}
+button.send:hover{color:#1a1a1a}
+.attach{display:grid;place-items:center;color:#9a9a9a;cursor:pointer;padding:0 4px}
+.attach:hover{color:#1a1a1a}
+/* the attached file and what it suggests asking */
+#tray{padding:0 24px}
+.file{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#fafafa;
+      border:1px solid #e6e6e6;border-radius:8px;padding:10px 12px;margin-bottom:10px}
+.file .name{font-weight:600}
+.file .meta{color:#8a8a8a;font-size:13px}
+.file .err{color:#b23c3c;font-size:13px}
+.file button{background:none;border:1px solid #e0e0e0;border-radius:6px;cursor:pointer;
+             font:inherit;font-size:13px;padding:4px 10px}
+.file button:hover:enabled{border-color:#b8b8b8}
+#suggest{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.sug{background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:8px 12px;
+     cursor:pointer;font:inherit;text-align:left;color:#1a1a1a}
+.sug:hover{border-color:#b8b8b8;background:#fafafa}
+.sug .hint{display:block;color:#8a8a8a;font-size:12px;margin-top:2px}
+</style></head><body><div id="app">
+<div id="log"><div id="empty">
+  <h1>PharmaCLI chat</h1>
+  <p class="sub">Here are some suggestions:</p>
+  <div class="try">Try these prompts:</div>
+  <div id="pills"></div>
+</div></div>
+<div id="tray"></div>
+<form id="f">
+<label class="attach" for="csv" title="Attach an inventory CSV">
+  <input id="csv" type="file" accept=".csv,text/csv" hidden>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       stroke-width="1.6"><path d="M21 12l-9 9a5 5 0 0 1-7-7l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-3-3l8-8"/></svg>
+</label>
+<input id="q" placeholder="Ask Something" autocomplete="off" autofocus>
+<button class="send" type="submit" aria-label="Send">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       stroke-width="1.6"><path d="M4 12l16-8-6 8 6 8z"/></svg>
+</button></form></div>
+<script>
+const log = document.getElementById('log'), qbox = document.getElementById('q');
+
+// the pills ARE the registry -- fetched, never hardcoded, so a new question in
+// QUESTIONS shows up here with no edit to this page
+fetch('/prompts').then(r => r.json()).then(ls => {
+  document.getElementById('pills').innerHTML = ls.slice(0, 6)
+    .map(l => `<button class="pill">${l}</button>`).join('');
+  document.querySelectorAll('.pill').forEach(
+    b => b.onclick = () => send(b.textContent));
+});
+
+function add(cls, html) {
+  document.getElementById('empty')?.remove();
+  const d = document.createElement('div');
+  d.className = 'msg ' + cls; d.innerHTML = html;
+  log.appendChild(d); log.scrollTop = log.scrollHeight;
+  return d;
+}
+const esc = s => s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+async function send(q) {
+  if (!q.trim()) return;
+  qbox.value = '';
+  add('you', `<span>${esc(q)}</span>`);
+  const pending = add('bot', '<pre>...</pre>');
+  try {
+    const r = await fetch('/ask?q=' + encodeURIComponent(q));
+    const d = await r.json();
+    pending.innerHTML = (d.label ? `<div class="label">· ${esc(d.label)}</div>` : '')
+                      + `<pre>${esc(d.text)}</pre>`;
+  } catch (e) {
+    pending.innerHTML = `<pre>the server went away: ${esc(String(e))}</pre>`;
+  }
+  log.scrollTop = log.scrollHeight;
+}
+document.getElementById('f').onsubmit = e => { e.preventDefault(); send(qbox.value); };
+
+const tray = document.getElementById('tray'), csv = document.getElementById('csv');
+
+// the attached file, what it says about itself, and what it suggests asking
+function drawTray(d) {
+  if (!d) { tray.innerHTML = ''; return; }
+  const meta = d.error
+    ? `<span class="err">${esc(d.error)}${d.reasons && d.reasons[0] ? ' — ' + esc(d.reasons[0]) : ''}</span>`
+    : `<span class="meta">${d.lines.toLocaleString()} lines`
+      + (d.skipped ? ` · ${d.skipped} skipped` : '') + `</span>`;
+  const buttons = d.error ? ''
+    : `<button id="save">Save to shelf</button><button id="drop">Remove</button>`;
+  const sug = (d.suggest || []).map(s =>
+    `<button class="sug" data-q="${esc(s.q)}">${esc(s.q)}<span class="hint">${esc(s.hint)}</span></button>`).join('');
+  tray.innerHTML = `<div class="file"><span class="name">${esc(d.name)}</span>${meta}${buttons}</div>`
+                 + (sug ? `<div id="suggest">${sug}</div>` : '');
+  document.querySelectorAll('.sug').forEach(b => b.onclick = () => send(b.dataset.q));
+  const save = document.getElementById('save'), drop = document.getElementById('drop');
+  if (save) save.onclick = async () => {
+    const j = await (await fetch('/save', {method: 'POST'})).json();
+    save.textContent = j.error ? j.error : `Saved ${j.saved.toLocaleString()} rows`;
+    save.disabled = true;
+  };
+  if (drop) drop.onclick = async () => {
+    await fetch('/clear', {method: 'POST'});
+    drawTray(null);
+  };
+}
+
+csv.onchange = async () => {
+  const file = csv.files[0];
+  if (!file) return;
+  drawTray({name: file.name, error: 'reading…', reasons: []});
+  const r = await fetch('/upload', {method: 'POST', body: await file.text(),
+                                    headers: {'X-Filename': file.name}});
+  drawTray(await r.json());
+  csv.value = '';
+};
+</script></body></html>

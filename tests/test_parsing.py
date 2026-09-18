@@ -13,13 +13,12 @@ def row(line: str) -> RawRow:
 
  # each rejection has its own reason
 def tparseprice():
-    assert parseprice("150.40902").value == Decimal("150.40902")
-   
-    assert parseprice("").reason == "missing price"
-    assert parseprice("abc").reason == "malformed price"
-    assert parseprice("NaN").reason == "malformed price"
-    assert parseprice("-1").reason == "non-positive price"
-    assert parseprice("0").reason == "non-positive price"
+    assert parseprice("150.40902") == (Decimal("150.40902"), None)
+    assert parseprice("") == (None, "missing price")
+    assert parseprice("abc") == (None, "malformed price")
+    assert parseprice("NaN") == (None, "malformed price")
+    assert parseprice("-1") == (None, "non-positive price")
+    assert parseprice("0") == (None, "non-positive price")
 
 
 def tparsedate():
@@ -239,3 +238,42 @@ def twatchrmactuallyremoves(tmp_path):
 
     # and it must not silently succeed with nothing to remove
     assert main(["watch", "rm", "--db", db]) == EXIT_BADIN
+
+
+def tmissingextrasayssobutinternalbugsstillraise(monkeypatch):
+    import pytest
+
+    from pharmacli import cli
+
+    def missing(name):
+        def handler(args):
+            raise ModuleNotFoundError(name=name)
+        return handler
+
+    monkeypatch.setitem(cli.HANDLERS, "columns", missing("pymupdf"))
+    assert cli.main(["columns"]) == cli.EXIT_BADIN
+    monkeypatch.setitem(cli.HANDLERS, "columns", missing("pharmacli.gone"))
+    with pytest.raises(ModuleNotFoundError):
+        cli.main(["columns"])
+
+
+def tenvfileisreadwithoutpythondotenv(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    (tmp_path / ".env").write_text("# a comment\nPHARMACLI_DB=from_file.db\n"
+                                   "export PHARMACLI_K = '9'\n")
+    env = {k: v for k, v in os.environ.items() if not k.startswith("PHARMACLI_")}
+    out = subprocess.run([sys.executable, "-c",
+                          "from pharmacli.config import load;"
+                          " c = load(); print(c.db, c.k)"],
+                         cwd=tmp_path, capture_output=True, text=True, env=env)
+    assert out.stdout.strip() == "from_file.db 9", out.stderr
+
+    # a real environment variable still beats the file
+    out = subprocess.run([sys.executable, "-c",
+                          "from pharmacli.config import load; print(load().db)"],
+                         cwd=tmp_path, capture_output=True, text=True,
+                         env={**env, "PHARMACLI_DB": "from_env.db"})
+    assert out.stdout.strip() == "from_env.db", out.stderr

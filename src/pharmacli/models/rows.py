@@ -36,11 +36,6 @@ RawRow = TypedDict(
     }
 )
 
-# REMOVED: REASON, a dict of five skip-reason strings. Every value was read
-# once or twice, all from models/medicine.py, and the tests already assert the
-# literal strings -- so the dict was a lookup table with one consumer and no
-# second spelling to keep in sync. The literals now live at the raise sites.
-
 
 @dataclass(frozen=True, slots=True)
 class SkippedRow:

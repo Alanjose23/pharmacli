@@ -10,54 +10,46 @@ from pharmacli.models.medicine import Medicine
 
 log = logging.getLogger(__name__)
 
-# fixed schema to include nonfetched items
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS nadac (
-    ndc TEXT,
-    description TEXT,
-    unit_price TEXT,
-    pricing_unit TEXT,
-    effective_date TEXT,
-    as_of_date TEXT,
-    otc TEXT,
-    rate_class TEXT,
-    generic_price TEXT,
-    generic_effective_date TEXT,
-    -- REMOVED: pharmacy_type. It held "C/I" on all 1,028,250 rows fetched --
-    -- NADAC only surveys chain and independent retail pharmacies, so the
-    -- indicator is constant by design and carries zero information. Medicine
-    -- still parses it, because the CSV round-trip has to write all 12 columns.
-    -- An existing database keeps the vestigial column until the next --fresh.
-    explanation_code TEXT,
-    UNIQUE(ndc, effective_date, as_of_date)
-)
-"""
+# fixed schema to include nonfetched items.
+#
+# pharmacy_type is deliberately NOT a column. It held "C/I" on all 1,028,250
+# rows fetched -- NADAC only surveys chain and independent retail pharmacies, so
+# the indicator is constant by design and carries zero information. Medicine
+# still parses it, because the CSV round-trip has to write all 12 columns. An
+# existing database keeps the vestigial column until the next --fresh.
+SCHEMA = ("CREATE TABLE IF NOT EXISTS nadac ("
+          " ndc TEXT,"
+          " description TEXT,"
+          " unit_price TEXT,"
+          " pricing_unit TEXT,"
+          " effective_date TEXT,"
+          " as_of_date TEXT,"
+          " otc TEXT,"
+          " rate_class TEXT,"
+          " generic_price TEXT,"
+          " generic_effective_date TEXT,"
+          " explanation_code TEXT,"
+          " UNIQUE(ndc, effective_date, as_of_date))")
 
 
 # the pharmacy's own stock list
-WATCH = """
-CREATE TABLE IF NOT EXISTS watch (
-    ndc     TEXT PRIMARY KEY,
-    added   TEXT NOT NULL,
-    cost    REAL,
-    on_hand REAL,
-    monthly REAL
-)
-"""
+WATCH = ("CREATE TABLE IF NOT EXISTS watch ("
+         " ndc     TEXT PRIMARY KEY,"
+         " added   TEXT NOT NULL,"
+         " cost    REAL,"
+         " on_hand REAL,"
+         " monthly REAL)")
 
 
 # openFDA pack sizes, cached. The mapping is near-static and openFDA allows
 # 1,000 requests a day without a key, so a 5,000-NDC shelf cannot be refetched
 # per run. `looked` is stored even on a miss: ~3 NDCs in 20 are not in the
 # openFDA directory, and without it every run would retry all of them forever.
-PACKAGE = """
-CREATE TABLE IF NOT EXISTS package (
-    ndc       TEXT PRIMARY KEY,
-    pack_size REAL,
-    pack_desc TEXT,
-    looked    TEXT NOT NULL
-)
-"""
+PACKAGE = ("CREATE TABLE IF NOT EXISTS package ("
+           " ndc       TEXT PRIMARY KEY,"
+           " pack_size REAL,"
+           " pack_desc TEXT,"
+           " looked    TEXT NOT NULL)")
 
 
 # opens file and makes sure that it exists

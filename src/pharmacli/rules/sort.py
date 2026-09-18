@@ -10,7 +10,7 @@ from pharmacli.protocols import RuleOut
 COLUMNS: Final[dict[str,str]] = {
     "description": "drug.description",
     "ndc": "drug.ndc",
-    "price": "sortprice",
+    "price": "price.unitprice",
     "date": "sort_date"
 }
 

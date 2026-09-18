@@ -4,10 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from pharmacli.err import HeaderMismatch, InputError
+from pharmacli.err import InputError
 from pharmacli.models.medicine import Medicine
 from pharmacli.models.rows import COLUMNS, RawRow, SkippedRow
-
 
 
 @dataclass
@@ -17,17 +16,13 @@ class ParseReport:
 # accepted meds and skipped items
 
 
-
-# REMOVED: class CSVR, whose __init__ stored a path and whose one method was
-# this body -- the same shape as CSVW and Cleaner, already cut for the same
-# reason. Also ParseReport.total, a property nothing read.
 def read_csv(path: Path) -> ParseReport:
     try:
         # undecodable bytes become U+FFFD instead of raising, so one bad
         # row does not take down the whole file; caught per-row below
         stream = open(path, newline="", encoding="utf-8-sig", errors="replace")
     except OSError as exc:
-        raise InputError(path, str(exc)) from exc
+        raise InputError(f"{path}: {exc}") from exc
 
     with stream:
         reader = csv.reader(stream)
@@ -40,7 +35,7 @@ def read_csv(path: Path) -> ParseReport:
 
         found = tuple(cell.strip() for cell in header)
         if found != COLUMNS:
-            raise HeaderMismatch(path, len(COLUMNS), len(found))
+            raise InputError(f"{path}: header has {len(found)} columns, expected {len(COLUMNS)}")
 
         firstcol = COLUMNS[0].casefold()
         records: list[Medicine] = []

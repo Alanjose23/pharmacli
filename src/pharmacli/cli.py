@@ -2,7 +2,6 @@ import argparse
 import asyncio
 import math
 import logging
-import multiprocessing
 import os
 import sys
 import tempfile
@@ -13,11 +12,10 @@ from typing import Final
 
 from pharmacli.models.rows import COLUMNS
 
-# import reader, writer, rules, pipeline, models, errors
+# import reader, rules, models, errors
 from pharmacli.config import load
 from pharmacli.err import FetchError, PharmaError, RuleError
 from pharmacli.output import open_output
-from pharmacli.pipeline import clean as run_rules
 from pharmacli.protocols import BaseRule
 from pharmacli.reader import read_csv
 from pharmacli.rules import RULES, describe, make
@@ -77,12 +75,6 @@ def buildparse() -> argparse.ArgumentParser:
     clean.add_argument("--rule", action="append", default=[], metavar="NAME[:KEY=VALUE, ...]", help=f"repeatable; available: {', '.join(sorted(RULES))}")
 
 
-    dedup = commands.add_parser("dedup", parents=[fileopts, verbosity], help= "remove dupes")
-    dedup.add_argument("--key", default= "row", choices= ('row', 'ndc', 'ndc+date'), help = "what makes the rows duplicates")
-    sortd = commands.add_parser("sort", parents=[fileopts, verbosity], help= "sorts all data by column name")
-    sortd.add_argument("--by", default="description",choices = {'description', 'ndc', 'price', 'date'},help = "select the column in which you want to sort the column by, default is by description")
-
-
 
     # list rules and columns 
     commands.add_parser("rules", parents=[verbosity], help="list the CSV cleaning rules")
@@ -92,7 +84,6 @@ def buildparse() -> argparse.ArgumentParser:
 
     # net commands
     fetch = commands.add_parser("fetch", parents=[verbosity],help="pull NADAC records into SQLite")
-    fetch.add_argument("--model", default="asyncio",choices=("sequential", "threaded", "multiproc", "asyncio"),help="which concurrency model to fetch with")
     fetch.add_argument("--workers", type=int, default=None, help="pool size / max requests in flight")
     fetch.add_argument("--limit", type=int, default=5000,help="how many records to fetch")
     fetch.add_argument("--db", default=None, help="SQLite file to write to")
@@ -153,7 +144,6 @@ def buildparse() -> argparse.ArgumentParser:
     # through to the underlying function's own default rather than asking.
     ask.add_argument("--ndc", default=None)
     ask.add_argument("--phrase", default=None, help="for the description lookup")
-    # ask.add_argument("--topic", default=None, help="for `why` -- a constant or concept")  # off: model/why questions -- uncomment to restore
     ask.add_argument("-o", "--out", default=None, metavar="FILE",
                      help="write every shelf drug's answers to a CSV, one row per drug")
     ask.add_argument("--db", default=None)
@@ -249,6 +239,57 @@ def buildparse() -> argparse.ArgumentParser:
                      help="also write the result dict here, so the numbers persist")
     nlp.add_argument("--db", default=None)
 
+    # week 9: the documents behind `ask`'s documents lane. Shaped like `watch`:
+    # one command, an action, and the flags each action reads.
+    dcs = commands.add_parser("docs", parents=[verbosity],
+                              help="the RAG corpus: fetch, ingest, refresh, eval, appeal, handout")
+    dcs.add_argument("action", choices=sorted(DOCS))
+    dcs.add_argument("target", nargs="*", help="appeal: the NDC; handout: the drug")
+    # run once by the developer; the corpus.json it writes is committed, so a
+    # clean checkout needs neither the DVC database nor the inventory
+    dcs.add_argument("--from-shelf", type=int, default=None, metavar="N",
+                     help="fetch: rebuild corpus.json from the N highest-spend shelf drugs")
+    dcs.add_argument("--qa", default="tests/rag_qa.jsonl", help="eval: the answer key")
+    dcs.add_argument("--chunking", choices=("fixed", "section"), default=None)
+    dcs.add_argument("--k", type=int, default=None, help="passages retrieved per question")
+    dcs.add_argument("--retrieval-only", action="store_true",
+                     help="eval: score retrieval without generating (seconds, not minutes)")
+    dcs.add_argument("--compare", nargs=2, default=None, metavar="RUN.json",
+                     help="eval: the before/after table of two --json runs")
+    dcs.add_argument("--json", default=None, metavar="FILE",
+                     help="eval: also write the full result here")
+    dcs.add_argument("-o", "--out", default=None, metavar="FILE",
+                     help="appeal, handout: write here instead of stdout")
+    dcs.add_argument("--db", default=None)
+
+    # reimbursement: synthetic claims until a real export exists, then the check
+    clm = commands.add_parser("claims", parents=[verbosity],
+                              help="claims paid below NADAC + fee, or below your cost")
+    clm.add_argument("action", choices=("sample", "check"))
+    clm.add_argument("file", nargs="?", default=None, help="check: the claims CSV")
+    clm.add_argument("--payers", default=None, metavar="CSV",
+                     help="payer,dispensing_fee (sample writes data/payers.csv)")
+    clm.add_argument("-o", "--out", default=None, metavar="FILE",
+                     help="sample: the claims CSV (data/claims_sample.csv); check: underpaid claims CSV")
+    clm.add_argument("--days", type=int, default=30, help="sample: spread fills over N days")
+    clm.add_argument("--seed", type=int, default=7, help="sample: same seed, same file")
+    clm.add_argument("--top", type=int, default=25, metavar="N")
+    clm.add_argument("--db", default=None)
+
+    gen = commands.add_parser("generics", parents=[verbosity],
+                              help="brand stock with a cheaper NADAC generic, in $/month")
+    gen.add_argument("--top", type=int, default=25, metavar="N")
+    gen.add_argument("--db", default=None)
+
+    rec = commands.add_parser("recalls", parents=[verbosity],
+                              help="FDA drug recalls that touch your shelf")
+    rec.add_argument("--days", type=int, default=90)
+    rec.add_argument("--db", default=None)
+
+    inter = commands.add_parser("interactions", parents=[verbosity],
+                                help="what the labels say about 2-6 drugs taken together")
+    inter.add_argument("drugs", nargs="+", help="drug names or NDCs")
+
     bench = commands.add_parser("bench", parents=[verbosity],help="time the concurrency models")
     bench.add_argument("--workload", default="both", choices=("io", "cpu", "numpy", "both"), help="io = network fetch, cpu = parsing, numpy = vectorization, both = run each")
     bench.add_argument("--workers", type=int, default=None)
@@ -274,14 +315,6 @@ def cmdcol() -> int:
 
 # rules dictionary, create, and if needed reject
 def buildrule(args: argparse.Namespace) -> list[BaseRule] | None:
-
-
-    if args.command == "dedup":
-        return [make("dedup", key=args.key)]
-
-    if args.command == "sort":
-        return [make("sort", by=args.by)]
-
     built: list[BaseRule] = []
     for raw in args.rule:
         try:
@@ -301,14 +334,6 @@ def cmdfetch(args: argparse.Namespace) -> int:
     if args.page_size:
         collect.PAGE_SIZE = args.page_size
     PAGE_SIZE = collect.PAGE_SIZE
-
-    # revised errors so that multiproc would be a viable option with the change in page size
-    if (args.page_size and args.model == "multiproc"
-            and multiprocessing.get_start_method() != "fork"):
-        log.error("--page-size with --model multiproc needs a fork platform "
-                  "(this one is %r); use --model asyncio",
-                  multiprocessing.get_start_method())
-        return EXIT_BADIN
 
     config = load()
     db = args.db or config.db
@@ -331,8 +356,7 @@ def cmdfetch(args: argparse.Namespace) -> int:
             log.info("nothing to fetch, %d rows already stored", count(conn))
             return EXIT_OK
 
-        log.info("fetching %d pages with the %s model (%d workers)",len(pages), args.model, workers)
-        model = collect.MODELS[args.model]
+        log.info("fetching %d pages, %d requests in flight", len(pages), workers)
 
         # each page is written after it comes back, not after whole program
         stored = 0
@@ -343,11 +367,8 @@ def cmdfetch(args: argparse.Namespace) -> int:
 
         start = time.perf_counter()
         try:
-            if args.model == "asyncio":
-                # event loop for async model
-                records = asyncio.run(model(pages, workers, on_page))
-            else:
-                records = model(pages, workers, on_page)
+            # the sequential/threaded/multiproc models exist for `bench`
+            records = asyncio.run(collect.fetch_async(pages, workers, on_page))
         except FetchError as exc:
             log.error("%s", exc)
             return EXIT_NETWORK
@@ -858,7 +879,7 @@ def cmdforecast(args: argparse.Namespace) -> int:
 # or 5 weeks apart, and the probability that a price moves next week depends
 # almost entirely on how old the current price is.
 #
-# These are OBSERVED rates from the panel, not estimates. See WEEK5_PLAN.md.
+# These are OBSERVED rates from the panel, not estimates.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # (age of price in days, P(it moves in the coming week)). Read as "up to N days".
@@ -1218,8 +1239,6 @@ def cmdmargin(args: argparse.Namespace) -> int:
         # to reject the whole thing.
         import csv
 
-        from pharmacli.output import open_output
-
         under_rows = [r for r in rows if mine[r[0]] - r[2] > 0]
         with open_output(Path(args.outfile)) as fh:
             w = csv.writer(fh, lineterminator="\n")
@@ -1392,7 +1411,7 @@ def cmdask(args: argparse.Namespace) -> int:
     # only the arg the matched question declares is used; the rest are dropped
     kw = {k: v for k, v in
           ((n, getattr(args, n, None)) for n in
-           ("ndc", "phrase"))    # "topic" # off: model/why questions -- uncomment to restore
+           ("ndc", "phrase"))
           if v is not None}
     label, lines = _ask.answer(args.question, db=args.db, **kw)
     print("\n".join([f"· {label}", ""] + lines if label else lines))
@@ -1407,10 +1426,269 @@ def cmdbench(args: argparse.Namespace) -> int:
 
     # revised destroyed data, instead passed working database, or a gathered file
     bench_db = args.db or str(Path(tempfile.gettempdir()) / "pharmacli-bench.db")
+    run(args.workload, args.limit, args.workers or config.workers, bench_db)
+    return EXIT_OK
+
+
+def _docs_fetch(args: argparse.Namespace) -> int:
+    import httpx
+
+    from pharmacli import docs
+
+    config = load()
+    with httpx.Client(timeout=config.timeout) as client:
+        if args.from_shelf:
+            corpus = docs.from_shelf(args.db or config.db, args.from_shelf, client)
+            if not corpus["inserts"]:
+                log.error("no shelf drug resolved to a label -- "
+                          "pharmacli watch import data/pharmacy_inventory.csv")
+                return EXIT_NOROWS
+            docs.save_corpus(corpus)
+            print(f"{len(corpus['inserts'])} labels, {len(corpus['business'])} "
+                  f"reimbursement documents -> {docs.CORPUS}")
+            return EXIT_OK
+        corpus = docs.load_corpus()
+        failed = docs.fetch(corpus, client)
+    total = len(corpus["inserts"]) + len(corpus["business"])
+    print(f"{total - len(failed)} of {total} documents in {docs.DOCS_DIR}")
+    for doc_id in failed:
+        log.warning("not fetched: %s", doc_id)
+    return EXIT_OK if len(failed) < total else EXIT_NETWORK
+
+
+def _docs_ingest(args: argparse.Namespace) -> int:
+    import httpx
+
+    from pharmacli import docs, rag
+
+    changed: list[str] = []
+    before = ""
+    if args.action == "refresh":
+        corpus = docs.load_corpus()
+        # taken before refresh mutates corpus in place, so reindex can tell
+        # whether the index on disk was actually complete for THIS corpus
+        before = docs.digest(corpus)
+        with httpx.Client(timeout=load().timeout) as client:
+            changed = docs.refresh(corpus, client)
+        if not changed:
+            # do not return here: a stack-down ingest earlier could have left
+            # the index partial or stale even though nothing changed just now
+            print("every document is current")
+        else:
+            from pharmacli.safety import label_digest
+
+            docs.save_corpus(corpus)
+            print(f"{len(changed)} changed: {', '.join(changed)}")
+            titles = {e["doc_id"]: e["title"] for e in corpus["inserts"] + corpus["business"]}
+            for doc_id in changed:
+                prev = docs.pdf_path(doc_id).with_suffix(".prev.pdf")
+                if prev.exists():
+                    print(f"\nlabel changes -- {titles[doc_id]}")
+                    print("\n".join(label_digest(prev, docs.pdf_path(doc_id))))
+
+    async def go() -> dict:
+        async with rag.session() as r:
+            if args.action == "refresh":
+                return await rag.reindex(r, changed, before)
+            return await rag.ingest(r)
+
+    report = asyncio.run(go())
+    if report["skipped"]:
+        print("corpus already indexed")
+        return EXIT_OK
+    print(f"{report['docs']} documents indexed: "
+          + ", ".join(f"{n} {k} chunks" for k, n in report["chunks"].items()))
+    if report["missing"]:
+        log.warning("%d documents not on disk (pharmacli docs fetch): %s",
+                    len(report["missing"]), ", ".join(report["missing"]))
+    return EXIT_OK if report["docs"] else EXIT_NOROWS
+
+
+def _docs_eval(args: argparse.Namespace) -> int:
+    import json
+
+    import httpx
+
+    from pharmacli import docs, rag, rageval
+
+    if args.compare:
+        try:
+            a, b = (json.loads(Path(p).read_text(encoding="utf-8")) for p in args.compare)
+        except (OSError, ValueError) as exc:
+            log.error("cannot read %s: %s", args.compare, exc)
+            return EXIT_BADIN
+        print("\n".join(rageval.compare(a, b)))
+        return EXIT_OK
+    config = load()
     try:
-        run(args.workload, args.limit, args.workers or config.workers, bench_db)
-    except FetchError as exc:
+        rows = rageval.load_rows(args.qa)
+    except (OSError, ValueError) as exc:
+        log.error("cannot read %s: %s", args.qa, exc)
+        return EXIT_BADIN
+
+    async def go() -> dict:
+        async with rag.session() as r:
+            return await rageval.run(r, rows, args.chunking or config.chunking,
+                                     args.k or config.k, args.retrieval_only)
+
+    result = asyncio.run(go())
+    print(f"\n{len(rows)} questions, {result['config']['chunking']} chunks, "
+          f"k={result['config']['k']}")
+    for key, value in result["summary"].items():
+        print(f"  {key:<20} {value}")
+    _dump(args, result)
+    return EXIT_OK
+
+
+def _docs_appeal(args: argparse.Namespace) -> int:
+    import httpx
+
+    from pharmacli import docs, rag
+
+    if len(args.target) != 1:
+        log.error("usage: pharmacli docs appeal NDC [-o appeal.md]")
+        return EXIT_BADIN
+    facts = rag.appeal_facts(args.db or load().db, args.target[0])
+    if isinstance(facts, str):
+        log.error("%s", facts)
+        return EXIT_NOROWS
+
+    async def go() -> dict:
+        async with rag.session() as r:
+            return await rag.draft_appeal(r, facts)
+
+    got = asyncio.run(go())
+    if args.out:
+        Path(args.out).write_text(got["markdown"], encoding="utf-8")
+        print(f"draft -> {args.out}")
+    else:
+        print(got["markdown"])
+    if got["flagged"]:
+        log.warning("numbers in the draft that no source supports: %s", ", ".join(got["flagged"]))
+    return EXIT_OK
+
+
+def _docs_handout(args: argparse.Namespace) -> int:
+    from pharmacli import docs, safety
+
+    if not args.target:
+        log.error("usage: pharmacli docs handout DRUG [-o handout.md]")
+        return EXIT_BADIN
+    try:
+        md = safety.handout(" ".join(args.target), docs.load_corpus())
+    except LookupError as exc:
         log.error("%s", exc)
+        return EXIT_NOROWS
+    if args.out:
+        Path(args.out).write_text(md, encoding="utf-8")
+        print(f"handout -> {args.out}")
+    else:
+        print(md, end="")
+    return EXIT_OK
+
+
+DOCS = {"fetch": _docs_fetch, "ingest": _docs_ingest, "refresh": _docs_ingest,
+        "eval": _docs_eval, "appeal": _docs_appeal, "handout": _docs_handout}
+
+
+def cmddocs(args: argparse.Namespace) -> int:
+    import httpx
+
+    from pharmacli import docs
+
+    # every action reads corpus.json, and all but fetch and handout need the two
+    # services. Both failures read the same whichever action hit them.
+    try:
+        return DOCS[args.action](args)
+    except (OSError, ValueError) as exc:
+        log.error("cannot read %s (or a label PDF): %s", docs.CORPUS, exc)
+        return EXIT_BADIN
+    except httpx.HTTPError as exc:
+        log.error("%s needs Chroma and Ollama -- docker compose up -d chroma ollama (%s)",
+                  args.action, exc)
+        return EXIT_NETWORK
+
+
+def cmdclaims(args: argparse.Namespace) -> int:
+    from pharmacli import claims
+
+    db = args.db or load().db
+    if args.action == "sample":
+        out, payers = args.out or "data/claims_sample.csv", args.payers or "data/payers.csv"
+        n = claims.sample(db, out, payers, args.days, args.seed)
+        if not n:
+            log.error("no shelf drug has monthly volume and a NADAC price to sample from")
+            return EXIT_NOROWS
+        print(f"{n:,} synthetic claims -> {out}" + (" (capped)" if n == claims.MAX_SAMPLE else ""))
+        print(f"illustrative payer fees -> {payers} -- replace them with your contract fees")
+        return EXIT_OK
+
+    if not args.file:
+        log.error("usage: pharmacli claims check CLAIMS.csv [--payers PAYERS.csv]")
+        return EXIT_BADIN
+    try:
+        rows, skipped = claims.read_claims(args.file)
+        fees = claims.read_payers(args.payers)
+    except (OSError, ValueError, KeyError) as exc:
+        log.error("cannot read claims or payers: %s", exc)
+        return EXIT_BADIN
+    for line, why in skipped[:MAX_SKIPPED]:
+        log.info("line %d: %s", line, why)
+    if not rows:
+        log.error("no usable claim rows in %s", args.file)
+        return EXIT_NOROWS
+    result = claims.check(db, rows, fees)
+    print("\n".join(claims.report(result, len(skipped), args.top)))
+    if args.out:
+        print(f"{claims.write_underpaid(result, args.out):,} underpaid claims -> {args.out}")
+    return EXIT_OK
+
+
+def cmdgenerics(args: argparse.Namespace) -> int:
+    from pharmacli import claims
+
+    got = claims.generics(args.db or load().db)
+    if isinstance(got, str):
+        log.error("%s", got)
+        return EXIT_NOROWS
+    print("\n".join(claims.generic_lines(got, args.top)))
+    return EXIT_OK
+
+
+def cmdrecalls(args: argparse.Namespace) -> int:
+    import httpx
+
+    from pharmacli import safety
+
+    try:
+        print("\n".join(safety.shelf_recalls(args.db, args.days)))
+    except httpx.HTTPError as exc:
+        log.error("openFDA recall search failed: %s", exc)
+        return EXIT_NETWORK
+    return EXIT_OK
+
+
+def cmdinteractions(args: argparse.Namespace) -> int:
+    import httpx
+
+    from pharmacli import docs, rag, safety
+
+    if not 2 <= len(args.drugs) <= safety.MAX_DRUGS:
+        log.error("give 2 to %d drugs (15 pairs is ~10 minutes on this CPU)", safety.MAX_DRUGS)
+        return EXIT_BADIN
+
+    async def go() -> None:
+        async with rag.session() as r:
+            async for line in safety.interactions(r, args.drugs):
+                print(line, flush=True)            # a pair at a time, not all at the end
+
+    try:
+        asyncio.run(go())
+    except (OSError, ValueError) as exc:
+        log.error("cannot read %s: %s", docs.CORPUS, exc)
+        return EXIT_BADIN
+    except (httpx.HTTPError, ConnectionError) as exc:
+        log.error("interactions need Chroma and Ollama -- docker compose up -d chroma ollama (%s)", exc)
         return EXIT_NETWORK
     return EXIT_OK
 
@@ -1435,6 +1713,11 @@ HANDLERS = {
     "nn":       cmdnn,
     "today":    cmdtoday,
     "nlp":      cmdnlp,
+    "docs":     cmddocs,
+    "claims":   cmdclaims,
+    "generics": cmdgenerics,
+    "recalls":  cmdrecalls,
+    "interactions": cmdinteractions,
 }
 
 
@@ -1442,7 +1725,7 @@ def dispatch(args: argparse.Namespace) -> int:
     if args.command in HANDLERS:
         return HANDLERS[args.command](args)
 
-    # everything below here reads the input CSV: clean, dedup, sort
+    # the only command left reads the input CSV: clean
     try:
         report = read_csv(args.input)
     except PharmaError as exc:
@@ -1462,10 +1745,10 @@ def dispatch(args: argparse.Namespace) -> int:
     if rules is None:
         return EXIT_BADRULE
 
-    kept, per_rule = run_rules(rules, report.records)
-
-    for name, removed in per_rule:
-        log.info("%s: rows removed: %d", name, removed)
+    kept = tuple(report.records)
+    for rule in rules:
+        kept, removed = rule.apply(kept)
+        log.info("%s: rows removed: %d", rule.name, removed)
 
     outpath = args.outfile or "stdout"
     if args.dryrun:
@@ -1505,6 +1788,13 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         return dispatch(args)
+    except ModuleNotFoundError as exc:
+        # an optional extra is missing; say which package instead of a traceback.
+        # A missing pharmacli module is a real bug, so that one still raises
+        if not exc.name or exc.name.startswith("pharmacli"):
+            raise
+        log.error("%s is not installed -- see the extras table in README.md", exc.name)
+        return EXIT_BADIN
     except BrokenPipeError:
         os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
         return EXIT_OK
