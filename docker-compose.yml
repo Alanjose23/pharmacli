@@ -1,5 +1,36 @@
-# The two services RAG needs. Every port is published on 127.0.0.1 only.
+# The API and the two services RAG needs. Every port is published on 127.0.0.1
+# only. `docker compose up -d --wait` brings up all three.
 services:
+  api:
+    build: .
+    ports: ["127.0.0.1:8000:8000"]
+    environment:
+      # service names, not 127.0.0.1: inside the network chroma listens on its
+      # own 8000, not the 8001 published to the host
+      PHARMACLI_CHROMA_URL: http://chroma:8000
+      PHARMACLI_OLLAMA_URL: http://ollama:11434
+      PHARMACLI_LLM: ${PHARMACLI_LLM:-qwen2.5:3b-instruct}
+      PHARMACLI_EMBED: ${PHARMACLI_EMBED:-all-minilm:l6-v2}
+      # no default and no secret in the image: compose refuses to start without it
+      PHARMACLI_JWT_SECRET: ${PHARMACLI_JWT_SECRET:?run  echo "PHARMACLI_JWT_SECRET=$(openssl rand -hex 32)" >> .env}
+    volumes:
+      # the PDFs `docs fetch` downloads, kept on the host so a rebuild does not
+      # re-download 56 files
+      - ./data:/app/data
+      # /predict needs these two. Both are gitignored, so a clean checkout has
+      # neither and the API serves documents only; uncomment once `sweep` has
+      # written a model and `fetch` a panel.
+      # - ./pharmacli.db:/app/pharmacli.db:ro
+      # - ./models:/app/models:ro
+    depends_on:
+      chroma: {condition: service_healthy}
+      ollama: {condition: service_healthy}
+    healthcheck:
+      # python is what this image has; no curl, and nothing to gain by adding it
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 10s
+      retries: 10
+
   chroma:
     image: chromadb/chroma:1.5.9
     ports: ["127.0.0.1:8001:8000"]

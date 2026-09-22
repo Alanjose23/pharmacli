@@ -34,7 +34,7 @@ Each extra adds features:
 | *(core)* | `fetch`, `watch`, `check`, `today`, `margin`, `reorder`, `lookup`, `ask` (the 14 questions; find-a-drug matches words in the drug name), `chat`, `claims`, `generics`, `recalls`, `clean`, `bench --workload io/cpu` |
 | `.[analysis]` | `forecast`, `nlp --task baseline`, `bench --workload numpy` |
 | `.[analysis,track]` | `sweep` (MLflow). `dvc` is a separate install (`pipx install dvc`), used by hand to version the database |
-| `.[analysis,serve]` | the prediction API |
+| `.[analysis,serve]` | the API (`.[analysis,serve,rag]` for its document endpoints). `docker compose up` installs all three itself |
 | `.[analysis,track,dl]` | `nn`. Install torch from the CPU index first: `pip install --index-url https://download.pytorch.org/whl/cpu torch` |
 | `.[analysis,nlp]` | `nlp --task finetune/search`, and matching by meaning in `ask "find a drug by description"` ("cholesterol pill" → Lipitor) |
 | `.[rag]` | `docs`, `interactions`, and document answers in `ask`. Also needs Chroma and Ollama (see below) |
@@ -279,7 +279,7 @@ scores as provisional.
 |---|---|
 | `forecast` | For each shelf NDC, the probability that its price moves ≥ 5% in next week's file, from the promoted model. `--min-prob 0.25`. Without a promoted model, it refits one (~40 s) |
 | `sweep` | Trains 3 baselines and 11 models (HistGradientBoosting grid + logistic regression). The data is split by date: train before 2026-05-13, pick the winner on validation (to 2026-07-01), score test once. Logs to `mlflow.db`, registers `pharmacli-mover@champion`, exports `models/pharmacli-mover.joblib` + `.json`. `--sample N` trains on N NDCs and promotes nothing |
-| `uvicorn pharmacli.serve:app` | The prediction API. `GET /health`; `POST /predict {"ndc": "00002353301", "overrides": {"unit_price": 250, "age_days": 25}}` (`overrides` optional). Returns the probability and `buy ahead`/`hold`. Won't start without a promoted model from `sweep`. Refuses an NDC whose features fall outside the training range (about 2%: prices unchanged for more than 20 weeks) |
+| `uvicorn pharmacli.serve:app` | The prediction API (see **The service** below for the container, the token and the document endpoints). `GET /health`; `POST /predict {"ndc": "00002353301", "overrides": {"unit_price": 250, "age_days": 25}}` (`overrides` optional). Returns the probability and `buy ahead`/`hold`. Won't start without a promoted model from `sweep`. Refuses an NDC whose features fall outside the training range (about 2%: prices unchanged for more than 20 weeks) |
 | `nn --task toy` | Hand-derived backprop in numpy checked against PyTorch autograd |
 | `nn --task tabular` | A feed-forward net on the same panel features (`--sample`, `--epochs`), logged to MLflow and `runs/tabular` |
 | `nn --task xray` | A CNN on PneumoniaMNIST (downloaded to `data/`). An exercise, not a clinical tool |
@@ -287,6 +287,59 @@ scores as provisional.
 | `nlp --task finetune` | DistilBERT fine-tuned on the same split (`--epochs`) |
 | `nlp --task search` | MiniLM semantic search against keyword search over 6,359 drug descriptions (`--query`) |
 | `bench --workload io/cpu/numpy/both` | Times sequential, threaded, multiprocess and asyncio downloads; parsing on each; a Python loop vs pandas vs numpy |
+
+### The service
+
+The API, Chroma and Ollama as one stack. From a clean checkout:
+
+```bash
+echo "PHARMACLI_JWT_SECRET=$(openssl rand -hex 32)" >> .env  # compose will not start without it
+docker compose up -d --wait                    # api on 127.0.0.1:8000; first build ~2 min
+docker compose exec api pharmacli docs fetch   # 56 PDFs into ./data/docs   (first run only)
+docker compose exec api pharmacli docs ingest  # chunk, embed, index        (first run only)
+docker compose exec api pharmacli token        # paste into Swagger's Authorize box
+```
+
+Then open <http://127.0.0.1:8000/docs>. The image carries the package and
+`corpus.json` and nothing else: the PDFs live in the mounted `./data`, the
+models in the Ollama volume, and the token secret arrives as an environment
+variable, so no data and no secret is baked into a layer.
+
+| endpoint | auth | does |
+|---|---|---|
+| `GET /health` | open | liveness, uptime, the model it is serving (or why it is not), and whether the documents are reachable. The compose healthcheck calls it |
+| `GET /metrics` | open | request counts, latency percentiles per route, token counts, and the median of each RAG stage — the numbers the latency report is built from |
+| `POST /predict` | bearer | the week 6 prediction. `503` when no model and panel are mounted |
+| `POST /ask` | bearer | the whole answer as one JSON object: text, sources, refusal reason, per-stage timings, token counts |
+| `POST /ask/stream` | bearer | the same answer as server-sent events, a token at a time |
+| `pharmacli token` | — | mints an HS256 bearer token (`--sub`, `--ttl`). Must run with the same `PHARMACLI_JWT_SECRET` as the API |
+
+```bash
+TOKEN=$(docker compose exec -T api pharmacli token | tr -d '\r')
+curl -N -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+     -d '{"question":"what are the boxed warnings on carbamazepine"}' \
+     http://127.0.0.1:8000/ask/stream
+```
+
+`/predict` is off unless you mount a panel and a promoted model — both are
+gitignored, so a clean checkout has neither. The two mounts are in
+`docker-compose.yml`, commented, next to the `./data` one.
+
+**What it logs.** One JSON line per request (`ts`, `level`, `request_id`,
+`method`, `path`, `status`, `ms`), and the same `request_id` on the response as
+`X-Request-ID` and in the body of every error. Send your own `X-Request-ID` and
+it is kept, so a trace survives a proxy. `docker compose logs -f api`.
+
+**Load test.** `tests/loadtest.py` streams the 50 evaluation questions at the
+service at several concurrency levels and writes a latency report:
+
+```bash
+python tests/loadtest.py --n 12 --concurrency 1,2,4 --out latency.md
+```
+
+Each answer carries its own stage timings back from the server, so the report
+names the bottleneck from measurements rather than guesswork: see
+[latency.md](latency.md).
 
 ### CSV cleaning
 
@@ -336,7 +389,7 @@ All code is in `src/pharmacli/`.
 | `frame.py` | Loads the `nadac` table into pandas; week-over-week % change; per-class move profile |
 | `model.py` | Features (log price, moved last week, moves in 8 weeks, 4-week volatility, weeks since move, price age, day of month), target (moves ≥ 5% next week), time split, pipeline, baselines, loading the promoted model |
 | `track.py` | The MLflow sweep and model promotion |
-| `serve.py` | The FastAPI prediction service |
+| `serve.py` | The FastAPI service: `/predict`, `/ask`, `/ask/stream`, JWT, JSON request logging and `/metrics` |
 | `nn.py` | The `nn` tasks |
 | `nlp.py` | The `nlp` tasks; keyword search and the embedding cache used by `ask` |
 | `ask.py` | The question list, routing between price and document answers, and the `ask -o` CSV |
@@ -348,6 +401,11 @@ All code is in `src/pharmacli/`.
 | `safety.py` | Recall matching, label change digest, counseling handout, interactions |
 
 `tests/` holds the pytest suite: `pip install -e ".[analysis,serve,rag]"` then `pytest -q`.
+`tests/loadtest.py` is not part of it — it needs the service running (see **The service**).
+
+Outside `src/`: `Dockerfile` (two stages, the runtime copies only the built venv),
+`docker-compose.yml` (api + Chroma + Ollama) and `.dockerignore` (without it the build
+context is 1.5GB of data that must not reach the image).
 
 ## Settings
 
@@ -368,6 +426,7 @@ Read from `.env` or the environment; an environment variable overrides the file.
 | `PHARMACLI_CHUNKING` | `section` | `fixed` or `section`: which collection answers |
 | `PHARMACLI_K` | `3` | chunks retrieved per question |
 | `PHARMACLI_RELEVANCE_FLOOR` | `0.35` | below this similarity a question is refused |
+| `PHARMACLI_JWT_SECRET` | *(none)* | signs the API's bearer tokens. Unset, the API generates a per-process one and logs a warning: the endpoints stay closed, but `pharmacli token` in another shell will not verify |
 
 ## Commands that delete or overwrite data
 

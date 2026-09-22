@@ -1,0 +1,15 @@
+# the build context is otherwise 1.5GB of data the image must not contain
+.git
+.venv
+data
+models
+runs
+mlruns
+notebooks
+build
+*.db
+drugs.csv
+.env
+**/__pycache__
+.mypy_cache
+.pytest_cache

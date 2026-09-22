@@ -47,8 +47,12 @@ def client(tmp_path, monkeypatch):
 
     monkeypatch.setenv("PHARMACLI_DB", db)
     monkeypatch.setenv("PHARMACLI_MODEL", str(path))
+    monkeypatch.setenv("PHARMACLI_JWT_SECRET", "unit-test-secret")
     from pharmacli import serve
     with TestClient(serve.app) as c:      # TestClient runs lifespan
+        # week 10: /predict is behind a bearer token. tests/test_api.py is
+        # where the token itself is tested; here it is just the way in
+        c.headers["Authorization"] = f"Bearer {serve.issue('test')}"
         yield c
 
 

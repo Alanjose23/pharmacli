@@ -296,6 +296,11 @@ def buildparse() -> argparse.ArgumentParser:
     bench.add_argument("--limit", type=int, default=2000)
     bench.add_argument("--db", default=None)
 
+    tok = commands.add_parser("token", parents=[verbosity],
+                              help="mint a bearer token for the API")
+    tok.add_argument("--sub", default="cli", help="who the token is for; it lands in the logs")
+    tok.add_argument("--ttl", type=int, default=3600, help="seconds until it expires")
+
     parser.add_argument("-v", "--verbose", action="store_true", help="debug logging")
 
     return parser
@@ -1696,6 +1701,15 @@ def cmdinteractions(args: argparse.Namespace) -> int:
 # commands that do NOT read an input CSV. Was nine near-identical
 # `if args.command == "x": return cmdx(args)` blocks; a dict says the same thing
 # and a new command is now one line here instead of three.
+# needs the same PHARMACLI_JWT_SECRET the API runs with, or the token it prints
+# will not verify -- see serve.py
+def cmdtoken(args: argparse.Namespace) -> int:
+    from pharmacli.serve import issue
+
+    print(issue(args.sub, args.ttl))
+    return EXIT_OK
+
+
 HANDLERS = {
     "rules":    lambda a: cmdrules(),
     "columns":  lambda a: cmdcol(),
@@ -1718,6 +1732,7 @@ HANDLERS = {
     "generics": cmdgenerics,
     "recalls":  cmdrecalls,
     "interactions": cmdinteractions,
+    "token":    cmdtoken,
 }
 
 

@@ -45,6 +45,9 @@ DEFAULTS = {
     "PHARMACLI_K": "3",
     # below this cosine similarity the best passage is too far off to answer from
     "PHARMACLI_RELEVANCE_FLOOR": "0.35",
+    # week 10: signs the API's bearer tokens. Empty on purpose -- there is no
+    # default secret to leak; serve.py generates a per-process one and says so.
+    "PHARMACLI_JWT_SECRET": "",
 }
 
 
@@ -76,6 +79,7 @@ class Config:
     chunking: str
     k: int
     relevance_floor: float
+    jwt_secret: str
 
 
 # builds config file that the code uses
@@ -94,4 +98,5 @@ def load() -> Config:
         chunking=get("PHARMACLI_CHUNKING"),
         k=num("PHARMACLI_K", int),
         relevance_floor=num("PHARMACLI_RELEVANCE_FLOOR", float),
+        jwt_secret=get("PHARMACLI_JWT_SECRET"),
     )
