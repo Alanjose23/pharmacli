@@ -69,12 +69,12 @@ _BIZ_WORDS = frozenset("store label mac appeal appeals medicaid reimbursement pb
 # `ask` and `today` cannot drift.
 
 def _worklists(db, within=14, dead_days=90, shelf=None):
-    from pharmacli.cli import worklists
+    from pharmacli.desk import worklists
     return worklists(db or load().db, within, dead_days, shelf=shelf)
 
 
 def _section(w, tag, within=14, dead_days=90) -> list[str]:
-    from pharmacli.cli import format_worklists
+    from pharmacli.desk import format_worklists
 
     lines = format_worklists(w, within, dead_days)
     i = next(n for n, s in enumerate(lines) if s.startswith(tag))
@@ -102,7 +102,7 @@ def dead_stock(db=None, shelf=None) -> list[str]:
 def next_repricing(db=None) -> list[str]:
     from datetime import date
 
-    from pharmacli.cli import next_reprice
+    from pharmacli.desk import next_reprice
 
     today = date.today()
     nxt = next_reprice(today)
@@ -176,14 +176,14 @@ def price_history(db=None, ndc="") -> list[str]:
     out = [f"{len(h)} weekly files, {h[0][0]} to {h[-1][0]}",
            f"  ${first:.5f} -> ${last:.5f}   {pct:+.1f}%"]
     # only the weeks where it actually moved: on 25 of 33 files nothing does
-    moves = [(d, p) for (d, p), (_, prev) in zip(h[1:], h) if p != prev]
+    moves = [(d, p) for (d, p), (_, prev) in zip(h[1:], h, strict=False) if p != prev]
     out.append(f"  {len(moves)} of {len(h) - 1} weeks carried a change")
     out += [f"    {d}  ${p:.5f}" for d, p in moves[-5:]]
     return out
 
 
 def move_probability(db=None, ndc="") -> list[str]:
-    from pharmacli.cli import days_to_reprice, expected_price, move_odds
+    from pharmacli.desk import days_to_reprice, expected_price, move_odds
 
     got = _drug(db, ndc)
     if not got:
@@ -200,7 +200,7 @@ def move_probability(db=None, ndc="") -> list[str]:
 
 
 def reorder_plan(db=None, ndc="") -> list[str]:
-    from pharmacli.cli import MATERIAL_SWING, reorder_advice
+    from pharmacli.desk import MATERIAL_SWING, reorder_advice
 
     got = _drug(db, ndc)
     if not got:
@@ -429,8 +429,14 @@ def write_drugs(path: str, db=None) -> int:
     import csv
 
     from pharmacli import enrich
-    from pharmacli.cli import (MATERIAL_SWING, breakeven, days_to_reprice,
-                               expected_price, move_odds, reorder_advice)
+    from pharmacli.desk import (
+        MATERIAL_SWING,
+        breakeven,
+        days_to_reprice,
+        expected_price,
+        move_odds,
+        reorder_advice,
+    )
     from pharmacli.output import open_output
     from pharmacli.store import connect, watched
 
@@ -466,7 +472,8 @@ def write_drugs(path: str, db=None) -> int:
             if h:
                 first, last = h[0][1], h[-1][1]
                 row |= {"weeks_priced": len(h),
-                        "weeks_changed": sum(p != prev for (_, p), (_, prev) in zip(h[1:], h)),
+                        "weeks_changed": sum(p != prev for (_, p), (_, prev)
+                                           in zip(h[1:], h, strict=False)),
                         "first_price": f"{first:.5f}",
                         "price_change_pct": f"{(last - first) / first * 100:.2f}" if first else ""}
             if oh is not None and mo:
@@ -509,6 +516,20 @@ def match(question: str) -> list[tuple[float, str, Callable[..., list[str]], dic
 CUTOFF = 0.45
 
 
+# The keyword arguments a matched question needs: the NDC if the text carries
+# one, and the phrase with the matched label's own words removed -- "what is
+# this drug lipitor" asks about "lipitor", not about the whole sentence.
+def args_from(q: str, label: str) -> dict:
+    kw = {}
+    m = NDC.search(q)
+    if m:
+        kw["ndc"] = re.sub(r"\D", "", m.group())
+    lab = {w.lower() for w in label.split()}
+    rest = " ".join(w for w in q.split() if w.lower() not in lab).strip()
+    kw["phrase"] = rest or q
+    return kw
+
+
 def lane(question: str) -> str:
     words = _key(question)
     if words & (_DOC_WORDS - _BIZ_WORDS):
@@ -525,10 +546,10 @@ def lane(question: str) -> str:
 
 
 def _no_match(question: str, ranked: list) -> list[str]:
-    near = [l for s, l, _, _ in ranked[:3] if s > 0.2]   # real matches only
+    near = [lab for s, lab, _, _ in ranked[:3] if s > 0.2]   # real matches only
     out = [f"no question matches {question!r}."]
     if near:
-        out += ["", "did you mean:"] + [f"  {l}" for l in near]
+        out += ["", "did you mean:"] + [f"  {lab}" for lab in near]
     return out + menu()
 
 

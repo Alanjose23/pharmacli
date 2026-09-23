@@ -31,10 +31,11 @@ Each extra adds features:
 
 | extra | needed for |
 |---|---|
-| *(core)* | `fetch`, `watch`, `check`, `today`, `margin`, `reorder`, `lookup`, `ask` (the 14 questions; find-a-drug matches words in the drug name), `chat`, `claims`, `generics`, `recalls`, `clean`, `bench --workload io/cpu` |
+| *(core)* | `fetch`, `watch`, `check`, `today`, `margin`, `reorder`, `lookup`, `ask` (the 14 questions; find-a-drug matches words in the drug name), `claims`, `generics`, `recalls`, `clean`, `bench --workload io/cpu` |
 | `.[analysis]` | `forecast`, `nlp --task baseline`, `bench --workload numpy` |
 | `.[analysis,track]` | `sweep` (MLflow). `dvc` is a separate install (`pipx install dvc`), used by hand to version the database |
-| `.[analysis,serve]` | the API (`.[analysis,serve,rag]` for its document endpoints). `docker compose up` installs all three itself |
+| `.[serve]` | `chat`, and the API's document and health endpoints |
+| `.[analysis,serve]` | the API's `/predict` as well (`.[analysis,serve,rag]` for the document endpoints). `docker compose up` installs all three itself |
 | `.[analysis,track,dl]` | `nn`. Install torch from the CPU index first: `pip install --index-url https://download.pytorch.org/whl/cpu torch` |
 | `.[analysis,nlp]` | `nlp --task finetune/search`, and matching by meaning in `ask "find a drug by description"` ("cholesterol pill" → Lipitor) |
 | `.[rag]` | `docs`, `interactions`, and document answers in `ask`. Also needs Chroma and Ollama (see below) |
@@ -184,7 +185,7 @@ Replace both files with a real claims export and your contract fees.
 | `lookup NDC` | Drug name, form, route, labeler and pack from openFDA, plus its newest NADAC price. `--history` adds every weekly price and a sparkline |
 | `ask "question"` | The 12 questions below, in plain English. `ask` alone lists them; `--ndc` / `--phrase` supply the drug |
 | `ask -o FILE.csv` | Every shelf drug's answers, one row each |
-| `chat` | `ask` in a browser at `127.0.0.1:8765` (`--port`, `--no-open`). Attach an inventory CSV to ask about that file instead of your saved shelf, then save it to the shelf if you want to keep it. Local only, no login |
+| `chat` | `ask` in a browser at `127.0.0.1:8765` (`--port`, `--no-open`). Attach an inventory CSV to ask about that file instead of your saved shelf, then save it to the shelf if you want to keep it. Runs the API on localhost and opens the page with a token in the URL fragment; `--no-open` prints that URL to copy. Needs `.[serve]` |
 
 The 14 `ask` questions: what am I losing money on · what should I order this week ·
 what capital is sitting dead · when do prices change next · what is on my shelf ·
@@ -308,8 +309,10 @@ variable, so no data and no secret is baked into a layer.
 | endpoint | auth | does |
 |---|---|---|
 | `GET /health` | open | liveness, uptime, the model it is serving (or why it is not), and whether the documents are reachable. The compose healthcheck calls it |
+| `GET /chat` | open | the browser page `pharmacli chat` opens. A shell with no data in it; everything it fetches needs the token |
+| `/chat/prompts`, `/chat/ask`, `/chat/upload`, `/chat/save`, `/chat/clear` | bearer | what that page calls: the question list, an answer, and the attached-CSV slot |
 | `GET /metrics` | open | request counts, latency percentiles per route, token counts, and the median of each RAG stage — the numbers the latency report is built from |
-| `POST /predict` | bearer | the week 6 prediction. `503` when no model and panel are mounted |
+| `POST /predict` | bearer | the week 6 prediction, answered from the committed demo fixture unless you mount the real panel and model |
 | `POST /ask` | bearer | the whole answer as one JSON object: text, sources, refusal reason, per-stage timings, token counts |
 | `POST /ask/stream` | bearer | the same answer as server-sent events, a token at a time |
 | `pharmacli token` | — | mints an HS256 bearer token (`--sub`, `--ttl`). Must run with the same `PHARMACLI_JWT_SECRET` as the API |
@@ -321,9 +324,17 @@ curl -N -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
      http://127.0.0.1:8000/ask/stream
 ```
 
-`/predict` is off unless you mount a panel and a promoted model — both are
-gitignored, so a clean checkout has neither. The two mounts are in
-`docker-compose.yml`, commented, next to the `./data` one.
+**The demo fixture.** `/predict` needs a panel and a promoted model, and both are
+gitignored — so a clean clone used to answer 503. Committed instead: `data/demo.db`
+(300 NDCs sampled from the panel) and `models/demo-mover.joblib` trained on it,
+2.1MB together, built by `python tests/make_demo.py --from pharmacli.db`. The model
+is named `pharmacli-mover-demo`, so `/health` and every prediction say what they
+are. For predictions that mean something, mount the real panel and model — the two
+lines are in `docker-compose.yml`, commented, next to the `./data` one — and point
+`PHARMACLI_DB` and `PHARMACLI_MODEL` at them.
+
+Regenerate the fixture when the feature list changes; `tests/test_demo.py` fails
+when it goes stale instead of letting the demo 503 in front of someone.
 
 **What it logs.** One JSON line per request (`ts`, `level`, `request_id`,
 `method`, `path`, `status`, `ms`), and the same `request_id` on the response as
@@ -373,7 +384,9 @@ All code is in `src/pharmacli/`.
 
 | file | role in the data flow |
 |---|---|
-| `cli.py` | Every command's arguments and output. Also holds the price maths: repricing calendar, move odds by price age, expected move by rate class, reorder advice, break-even, and the `today`/`check` worklists |
+| `cli.py` | Every command's handler, the dispatch table and `main` |
+| `parser.py` | Every command's arguments: one `argparse` tree, and the `--version` string |
+| `desk.py` | The price maths: repricing calendar, move odds by price age, expected move by rate class, reorder advice, break-even, and the `today`/`check` worklists. Imports nothing from `cli` |
 | `config.py` | Reads the `PHARMACLI_*` settings from `.env` and the environment |
 | `err.py` | Error types (bad input, bad rule, failed download) |
 | `output.py` | Writes to a file or stdout |
@@ -389,11 +402,11 @@ All code is in `src/pharmacli/`.
 | `frame.py` | Loads the `nadac` table into pandas; week-over-week % change; per-class move profile |
 | `model.py` | Features (log price, moved last week, moves in 8 weeks, 4-week volatility, weeks since move, price age, day of month), target (moves ≥ 5% next week), time split, pipeline, baselines, loading the promoted model |
 | `track.py` | The MLflow sweep and model promotion |
-| `serve.py` | The FastAPI service: `/predict`, `/ask`, `/ask/stream`, JWT, JSON request logging and `/metrics` |
+| `serve.py` | The FastAPI service: `/predict`, `/ask`, `/ask/stream`, the `/chat/*` page endpoints, JWT, JSON request logging and `/metrics` |
 | `nn.py` | The `nn` tasks |
 | `nlp.py` | The `nlp` tasks; keyword search and the embedding cache used by `ask` |
 | `ask.py` | The question list, routing between price and document answers, and the `ask -o` CSV |
-| `chat.py`, `chat.html` | The HTTP handler for `chat`, and the page it serves |
+| `chat.html` | The page `chat` serves. Its endpoints are `/chat/*` on the FastAPI app |
 | `claims.py` | Synthetic claims, the underpayment check, the brand → generic gaps |
 | `docs.py` | `corpus.json`, PDF downloads (DailyMed, CMS, govinfo, NY), openFDA label lookup, refresh |
 | `rag.py` | PDF parsing, both chunkers, Chroma and Ollama over HTTP, retrieval, refusals, citations, appeal drafting |
@@ -401,7 +414,12 @@ All code is in `src/pharmacli/`.
 | `safety.py` | Recall matching, label change digest, counseling handout, interactions |
 
 `tests/` holds the pytest suite: `pip install -e ".[analysis,serve,rag]"` then `pytest -q`.
-`tests/loadtest.py` is not part of it — it needs the service running (see **The service**).
+`tests/loadtest.py` and `tests/make_demo.py` are not part of it — the first needs the
+service running (see **The service**), the second regenerates the committed demo fixture.
+
+Lint with `ruff check src tests` (`pip install ruff`; the rules are in `pyproject.toml`)
+and types with `mypy src/pharmacli`. CI runs the suite on 3.10/3.11/3.12, lints once,
+and builds the image and curls its `/health` to prove the container still starts.
 
 Outside `src/`: `Dockerfile` (two stages, the runtime copies only the built venv),
 `docker-compose.yml` (api + Chroma + Ollama) and `.dockerignore` (without it the build

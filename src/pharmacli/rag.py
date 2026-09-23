@@ -186,8 +186,12 @@ class Chroma:
         r = await self.http.post(f"{self.base}/{await self.ensure(name)}/query", json=body)
         r.raise_for_status()
         d = r.json()
+        # strict: Chroma returns four parallel arrays. If they ever came back
+        # ragged, zip would pair a passage with another passage's metadata and
+        # the answer would carry a citation to the wrong page -- silently
         return [Hit(i, t, m, 1.0 - dist) for i, t, m, dist in
-                zip(d["ids"][0], d["documents"][0], d["metadatas"][0], d["distances"][0])]
+                zip(d["ids"][0], d["documents"][0], d["metadatas"][0],
+                    d["distances"][0], strict=True)]
 
     async def delete(self, name: str, where: dict) -> None:
         r = await self.http.post(f"{self.base}/{await self.ensure(name)}/delete",
@@ -347,7 +351,8 @@ SYSTEM = (
     "- End every sentence with the citation of the block it comes from, like [1] or [2][3].\n"
     '- Example of the required format: "The first fact from the context [2]. '
     'A second fact from the context [1]."\n'
-    "- Say what the documents say. Do not add facts, doses or numbers that are not in the context.\n"
+    "- Say what the documents say. Do not add facts, doses or numbers that are "
+    "not in the context.\n"
     "- Never make a decision about a specific patient or tailor a dose to one.\n"
     f"- If the context does not answer the question, reply with exactly: {SENTINEL}\n"
     "- At most 5 sentences.")
@@ -588,7 +593,7 @@ def appeal_facts(db: str, ndc: str) -> dict | str:
     from pathlib import Path
 
     from pharmacli.ask import _drug
-    from pharmacli.cli import breakeven
+    from pharmacli.desk import breakeven
 
     if not Path(db).exists():
         return f"no NADAC panel at {db}"

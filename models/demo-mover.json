@@ -1,0 +1,79 @@
+{
+  "version": 0,
+  "run_id": "demo",
+  "data_md5": null,
+  "threshold": 0.376790596304646,
+  "val_pr_auc": null,
+  "test_pr_auc": 0.292897572622853,
+  "params": {},
+  "note": "demo fixture from tests/make_demo.py -- a sample of the panel, not the promoted model",
+  "name": "pharmacli-mover-demo",
+  "trained_at": "2026-09-23T15:14:51+00:00",
+  "seed": 0,
+  "features": {
+    "numeric": [
+      "log_price",
+      "moved_last",
+      "moves_8w",
+      "vol_4w",
+      "weeks_since_move",
+      "age_days",
+      "day_of_month",
+      "is_monthly_week"
+    ],
+    "categorical": [
+      "rate_class",
+      "otc",
+      "pricing_unit"
+    ]
+  },
+  "bounds": {
+    "log_price": [
+      -3.630355385313899,
+      4.808447226377017
+    ],
+    "moved_last": [
+      0.0,
+      1.2
+    ],
+    "moves_8w": [
+      0.0,
+      2.4
+    ],
+    "vol_4w": [
+      0.0,
+      0.16379186866460993
+    ],
+    "weeks_since_move": [
+      0.0,
+      28.8
+    ],
+    "age_days": [
+      0.0,
+      420.0
+    ],
+    "day_of_month": [
+      0.0,
+      34.6
+    ],
+    "is_monthly_week": [
+      0.0,
+      1.2
+    ]
+  },
+  "categories": {
+    "rate_class": [
+      "B",
+      "G"
+    ],
+    "otc": [
+      "N",
+      "Y"
+    ],
+    "pricing_unit": [
+      "EA",
+      "GM",
+      "ML"
+    ]
+  }
+}

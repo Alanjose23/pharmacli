@@ -67,11 +67,13 @@ def shelf_matches(recalls: list[dict], shelf: dict) -> list[tuple[dict, list[str
         if found:
             hits.append((rec, found))
     hits.sort(key=lambda h: h[0].get("report_date", ""), reverse=True)
-    hits.sort(key=lambda h: _CLASS.get(h[0].get("classification", ""), 3))   # stable: class, then newest
+    # stable: class, then newest
+    hits.sort(key=lambda h: _CLASS.get(h[0].get("classification", ""), 3))
     return hits
 
 
-def recall_lines(hits: list[tuple[dict, list[str]]], shelf: dict, checked: int, days: int) -> list[str]:
+def recall_lines(hits: list[tuple[dict, list[str]]], shelf: dict,
+                 checked: int, days: int) -> list[str]:
     if not hits:
         return [f"clean: no recalls in the last {days} days touch your shelf "
                 f"({checked:,} recalls checked)"]
@@ -119,7 +121,8 @@ def _section_text(path) -> dict[str, list[str]]:
 def label_digest(prev, new, cap: int = 20) -> list[str]:
     old, cur = _section_text(prev), _section_text(new)
     order = list(cur) + [t for t in old if t not in cur]           # document order
-    order.sort(key=lambda t: not t.startswith(("WARNING:", "BOXED WARNING")))   # boxed warnings first
+    # boxed warnings first
+    order.sort(key=lambda t: not t.startswith(("WARNING:", "BOXED WARNING")))
     out = []
     for title in order:
         before, after = old.get(title), cur.get(title)

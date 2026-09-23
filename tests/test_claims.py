@@ -1,6 +1,7 @@
 import csv
 
 from conftest import row
+
 from pharmacli import claims
 from pharmacli.models.medicine import Medicine
 from pharmacli.store import connect, insert, watch_cost
@@ -50,14 +51,17 @@ def tcheckusesthefilldatepriceandpayerfees(tmp_path, monkeypatch):
         {"date": "2026-01-20", "rx": "2", "ndc": A, "qty": 10.0, "paid": 15.0, "payer": "PBM A"},
         # payer not in the table: the default fee
         {"date": "2026-01-20", "rx": "3", "ndc": B, "qty": 1.0, "paid": 5.0, "payer": "Somebody"},
-        {"date": "2026-01-20", "rx": "4", "ndc": "99999999999", "qty": 1.0, "paid": 1.0, "payer": "PBM A"},
+        {"date": "2026-01-20", "rx": "4", "ndc": "99999999999", "qty": 1.0,
+         "paid": 1.0, "payer": "PBM A"},
     ]
     result = claims.check(db, rows, {"PBM A": 0.50})
     got = {r["rx"]: r for r in result["claims"]}
     assert result["unpriced"] == 1
     assert (got["1"]["nadac_unit"], got["1"]["shortfall"]) == (1.0, -4.5)
-    assert (got["2"]["nadac_unit"], got["2"]["shortfall"], got["2"]["below_cost_loss"]) == (2.0, 5.5, 0.5)
-    assert (got["3"]["fee"], got["3"]["shortfall"], got["3"]["below_cost_loss"]) == (10.0, 15.0, 14.0)
+    assert ((got["2"]["nadac_unit"], got["2"]["shortfall"], got["2"]["below_cost_loss"])
+            == (2.0, 5.5, 0.5))
+    assert ((got["3"]["fee"], got["3"]["shortfall"], got["3"]["below_cost_loss"])
+            == (10.0, 15.0, 14.0))
 
     lines = claims.report(result, skipped=1)
     assert lines[0] == "3 claims priced, 1 skipped, 1 unpriced"

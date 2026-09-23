@@ -11,11 +11,22 @@ RUN python -m venv /venv \
 
 FROM python:3.12-slim
 COPY --from=build /venv /venv
-# the document list, and only that: the PDFs, the SQLite panel and the promoted
-# model are mounted at run time, so no data and no secret is baked in
+# the document list and the 2.1MB demo fixture. The real PDFs, the full SQLite
+# panel and the promoted model are mounted at run time, so no shelf data, no
+# acquisition costs and no secret are baked in
 WORKDIR /app
 COPY corpus.json ./
-ENV PATH=/venv/bin:$PATH PYTHONUNBUFFERED=1
+# the demo panel and the model trained on it (tests/make_demo.py, 2.1MB): what
+# makes /predict answer on a clean clone. The real panel and promoted model are
+# still mounted, never baked in.
+COPY data/demo.db ./data/
+COPY models/demo-mover.joblib models/demo-mover.json ./models/
+# the image points at the fixture it ships, so `docker run` with no mounts and
+# no compose still answers /predict. Anything passed in wins: compose sets these
+# from .env, and a mounted real panel is one override away.
+ENV PATH=/venv/bin:$PATH PYTHONUNBUFFERED=1 \
+    PHARMACLI_DB=data/demo.db \
+    PHARMACLI_MODEL=models/demo-mover.joblib
 RUN useradd --create-home --uid 1000 app && mkdir -p /app/data && chown -R app /app
 USER app
 EXPOSE 8000

@@ -118,15 +118,18 @@ def check(db: str, claims: list[dict], fees: dict[str, float]) -> dict:
 
 
 def underpaid(result: dict) -> list[dict]:
-    return sorted((r for r in result["claims"] if r["shortfall"] > 0), key=lambda r: -r["shortfall"])
+    return sorted((r for r in result["claims"] if r["shortfall"] > 0),
+                  key=lambda r: -r["shortfall"])
 
 
 def report(result: dict, skipped: int = 0, top: int = 25) -> list[str]:
     rows, under = result["claims"], underpaid(result)
     below = [r for r in rows if r["below_cost_loss"] > 0]
     out = [f"{len(rows):,} claims priced, {skipped:,} skipped, {result['unpriced']:,} unpriced",
-           f"underpaid vs NADAC + fee   {len(under):,} claims  ${sum(r['shortfall'] for r in under):,.2f}",
-           f"paid below your cost       {len(below):,} claims  ${sum(r['below_cost_loss'] for r in below):,.2f}"]
+           f"underpaid vs NADAC + fee   {len(under):,} claims  "
+           f"${sum(r['shortfall'] for r in under):,.2f}",
+           f"paid below your cost       {len(below):,} claims  "
+           f"${sum(r['below_cost_loss'] for r in below):,.2f}"]
     if not under:
         return out + ["", "clean: no claim was paid below the NADAC benchmark"]
 
@@ -136,7 +139,8 @@ def report(result: dict, skipped: int = 0, top: int = 25) -> list[str]:
         count = sum(1 for r in rows if r["payer"] == payer)
         out.append(f"{payer[:23]:<24}{count:>8}{len(mine):>11}"
                    f"{sum(r['shortfall'] for r in mine):>12,.2f}")
-    out += ["", f"{'date':<11}{'rx':<8}{'ndc':<12}{'payer':<20}{'paid':>9}{'benchmark':>11}{'short':>9}"]
+    out += ["", f"{'date':<11}{'rx':<8}{'ndc':<12}{'payer':<20}"
+                f"{'paid':>9}{'benchmark':>11}{'short':>9}"]
     out += [f"{r['date']:<11}{r['rx']:<8}{r['ndc']:<12}{r['payer'][:19]:<20}"
             f"{r['paid']:>9.2f}{r['benchmark']:>11.2f}{r['shortfall']:>9.2f}" for r in under[:top]]
     worst = collections.Counter()
@@ -170,10 +174,11 @@ def generics(db: str, shelf: tuple[dict, dict] | None = None) -> list[tuple] | s
             mine, qty = shelf
             if not mine:
                 return "no inventory recorded. pharmacli watch import data/pharmacy_inventory.csv"
+            holes = ",".join("?" * len(mine))
             found = conn.execute(
                 "SELECT n.ndc, n.description, CAST(n.unit_price AS REAL),"
                 " CAST(n.generic_price AS REAL)" + cheaper
-                + " AND n.ndc IN (%s)" % ",".join("?" * len(mine)), [week, *mine]).fetchall()
+                + f" AND n.ndc IN ({holes})", [week, *mine]).fetchall()
             rows = [(*r, qty.get(r[0], (None, None))[1]) for r in found]
         else:
             if not conn.execute("SELECT 1 FROM watch LIMIT 1").fetchone():

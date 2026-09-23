@@ -94,6 +94,25 @@ rag = [
 module = ["pandas.*", "sklearn.*", "shap.*", "mlflow.*", "dvc.*", "joblib.*", "torch.*", "pymupdf.*"]
 ignore_missing_imports = true
 
+# week 10. mypy checks types; ruff checks everything else. Not installed as a
+# dependency, for the same reason mypy is not: it is a tool you run, not a thing
+# the package needs -- `pip install ruff`, or read the lint step in ci.yml.
+#
+# The rules are chosen, not defaults: E/F/W are pycodestyle and pyflakes, I sorts
+# imports, UP catches syntax older than the 3.10 floor, B is bugbear.
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# FastAPI's dependency injection IS a function call in an argument default:
+# `def ask(..., who: str = Depends(caller))`. B008 is right about the general
+# case and wrong about this framework.
+"src/pharmacli/serve.py" = ["B008"]
+
 # tests were renamed t
 [tool.pytest.ini_options]
 python_functions = "t*"

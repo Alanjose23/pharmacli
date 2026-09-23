@@ -6,7 +6,14 @@ import os
 import time
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 
-from pharmacli.collect import PAGE_SIZE, fetch_async, fetch_multiproc, fetch_sequential, fetch_threaded, to_row
+from pharmacli.collect import (
+    PAGE_SIZE,
+    fetch_async,
+    fetch_multiproc,
+    fetch_sequential,
+    fetch_threaded,
+    to_row,
+)
 from pharmacli.models.medicine import Medicine
 
 log = logging.getLogger(__name__)
@@ -63,7 +70,7 @@ def timed(fn, *args):
 
 
 
-### fetching 
+### fetching
 # times each of the four models fetching exactly the same pages
 def bench_io(limit: int, workers: int, db: str) -> list[tuple]:
     import asyncio
@@ -151,7 +158,7 @@ def bench_vector(rows: int = VECTOR_ROWS) -> list[tuple]:
     ser = pd.Series(arr)
     results = []
 
-    def loop():       
+    def loop():
         # object for every subtraction and division
         out = [0.0] * (len(lst) - 1)
         for i in range(1, len(lst)):
@@ -186,7 +193,7 @@ def show(title: str, rows: list[tuple], baseline_name: str = "sequential") -> No
 
 # runs version and gets tables
 def run(workload: str, limit: int, workers: int, db: str) -> None:
-    
+
     print(f"cpu cores: {os.cpu_count()}    workers: {workers}")
     # prints core count to maintain readability on all machines
 

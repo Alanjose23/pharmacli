@@ -5,8 +5,8 @@
 #   3. every transformer is fit inside the Pipeline, so imputation and scaling
 #      never see the test weeks
 
-# target looks forward one week 
-# split is by time, same ndc appears weeks on end 
+# target looks forward one week
+# split is by time, same ndc appears weeks on end
 
 import numpy as np
 import pandas as pd
@@ -14,9 +14,16 @@ from sklearn.compose import ColumnTransformer
 from sklearn.dummy import DummyClassifier
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.impute import SimpleImputer
-from sklearn.metrics import (average_precision_score, brier_score_loss,
-                             confusion_matrix, f1_score, precision_recall_curve,
-                             precision_score, recall_score, roc_auc_score)
+from sklearn.metrics import (
+    average_precision_score,
+    brier_score_loss,
+    confusion_matrix,
+    f1_score,
+    precision_recall_curve,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
@@ -71,12 +78,12 @@ def features(df: pd.DataFrame, threshold: float = THRESHOLD,
     g = d.groupby("ndc", observed=True)
 
     # `wow` at week t is the move from t-1 to t, so `moved` is backward-looking.
-   
+
     d["moved"] = (d["wow"] != 0) & d["wow"].notna()
 
     #
     nxt = g["wow"].shift(-1)
-   
+
     if direction == "down":
         hit = nxt <= -threshold
     elif direction == "up":
@@ -102,14 +109,14 @@ def features(df: pd.DataFrame, threshold: float = THRESHOLD,
     # shifting a boolean yields object dtype with NaN
     d[NUMERIC] = d[NUMERIC].astype(float)
 
-    
+
     if not labeled_only:
         return d
     return d.dropna(subset=["y"]).assign(y=lambda x: x["y"].astype(int))
 
 
 def temporal_split(d: pd.DataFrame, cutoff: str = CUTOFF):
-    
+
     train = d[d["as_of_date"] < cutoff]
     test = d[d["as_of_date"] >= cutoff]
     cols = NUMERIC + CATEGORICAL
@@ -198,7 +205,7 @@ def net_benefit(y_true, proba) -> pd.DataFrame:
 
 
 def explain(fitted: Pipeline, X: pd.DataFrame, n: int = 2000):
-    ## sample for pipeline, imported 
+    ## sample for pipeline, imported
     import shap
 
     sample = X.sample(min(n, len(X)), random_state=0)

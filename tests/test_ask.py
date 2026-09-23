@@ -1,9 +1,10 @@
 import argparse
 
-
 from conftest import row
+
 from pharmacli import ask
-from pharmacli.cli import EXIT_OK, cmdtoday, format_worklists, worklists
+from pharmacli.cli import EXIT_OK, cmdtoday
+from pharmacli.desk import format_worklists, worklists
 from pharmacli.models.medicine import Medicine
 from pharmacli.store import connect, insert, watch_cost
 
@@ -78,7 +79,8 @@ def tdocumentquestionsleavethepricelane():
                  "how does CMS calculate NADAC",
                  # a reimbursement question full of price vocabulary: the shelf
                  # questions must not claim it (biz-04 in the answer key)
-                 "how many pharmacies have to report a price before the NADAC help desk will review it",
+                 "how many pharmacies have to report a price before the NADAC "
+                 "help desk will review it",
                  "what is the deadline for a MAC appeal in New York",
                  "what is the capital of France",
                  "how should I store this drug",
@@ -121,25 +123,26 @@ def tpartialquestionsstillmatch():
 
 
 def targscomeoutofthesentence():
-    from pharmacli.chat import _args_from
+    from pharmacli.ask import args_from
 
-    a = _args_from("what is this drug 59148001013", "what is this drug")
+    a = args_from("what is this drug 59148001013", "what is this drug")
     assert a["ndc"] == "59148001013"
 
     # hyphenated and spaced NDCs are the same NDC
-    assert _args_from("drug 5914-8001-013", "")["ndc"] == "59148001013"
+    assert args_from("drug 5914-8001-013", "")["ndc"] == "59148001013"
 
     # the label's words are stripped so the phrase is only the useful part
-    a = _args_from("find a drug by description cholesterol medication",
+    a = args_from("find a drug by description cholesterol medication",
                    "find a drug by description")
     assert a["phrase"] == "cholesterol medication"
 
     # no digits, no ndc key -- answer() then reports what it needs
-    assert "ndc" not in _args_from("what is on my shelf", "what is on my shelf")
+    assert "ndc" not in args_from("what is on my shelf", "what is on my shelf")
 
 
 def tcheckscopestothefile(tmp_path):
-    from pharmacli.cli import read_inventory, worklists
+    from pharmacli.cli import read_inventory
+    from pharmacli.desk import worklists
     from pharmacli.store import costs
 
     db = shelf(tmp_path)                       # SINKING + FINE are on the watch list
@@ -181,8 +184,8 @@ def twritedrugsonerowperdrug(tmp_path):
     r = rows[SINKING]
     assert float(r["your_cost"]) == 1.5 and float(r["nadac_unit"]) == 1.0
     # the same breakeven() the CLI prints, not a second calculation of it
-    from pharmacli.cli import breakeven
     from pharmacli.config import load
+    from pharmacli.desk import breakeven
     assert r["breakeven"] == breakeven(1.5, 1.0, load().dispensing_fee, "EA")
 
 
@@ -192,7 +195,8 @@ def tnewquestionsrouteandsurviveoffline(monkeypatch):
     from pharmacli import safety
 
     assert ask.match("which drugs are recalled")[0][1] == "which stocked drugs are recalled"
-    assert ask.match("which brands have a cheaper generic")[0][1] == "which brands have cheaper generics"
+    assert (ask.match("which brands have a cheaper generic")[0][1]
+            == "which brands have cheaper generics")
     assert ask.match("what is on my shelf")[0][1] == "what is on my shelf"
     assert ask.match("what am I losing money on")[0][1] == "what am I losing money on"
 

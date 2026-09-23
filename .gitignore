@@ -246,7 +246,15 @@ mlruns/
 # The promoted model + sidecar. Derived: `pharmacli sweep` rebuilds them, and
 # the registry is the versioning story, not git. A 5MB pickle in git history
 # is a pickle in git history forever.
-models/
+#
+# models/* rather than models/, so the two demo files below can be re-included:
+# git cannot un-ignore a file whose parent directory is excluded. They are the
+# exception on purpose -- 0.7MB trained by tests/make_demo.py on the committed
+# data/demo.db, so `docker compose up` on a clean clone can answer /predict
+# instead of 503ing. Regenerate them, never hand-edit them.
+models/*
+!models/demo-mover.joblib
+!models/demo-mover.json
 
 # pharmacli.db.dvc is deliberately NOT ignored -- that pointer file IS the
 # dataset version, and committing it is the entire point of `dvc add`.

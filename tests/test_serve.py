@@ -2,13 +2,13 @@ import json
 
 import pandas as pd
 import pytest
-
 from conftest import row
+
 from pharmacli.models.medicine import Medicine
 from pharmacli.store import connect, insert
 
 pytest.importorskip("fastapi")
-from fastapi.testclient import TestClient      # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
 
 model = pytest.importorskip("pharmacli.model")
 frame = pytest.importorskip("pharmacli.frame")

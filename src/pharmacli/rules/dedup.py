@@ -13,7 +13,7 @@ class DedupRule:
 
     name: ClassVar[str] = "dedup"
 
-        
+
 
 # choose key (row, ndc, ndc and day)
     def __init__(self, key: DedupK = "row") -> None:

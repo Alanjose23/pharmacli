@@ -1,6 +1,7 @@
 import json
 
 from conftest import FakeChroma, hit, userag
+
 from pharmacli import rageval
 
 
@@ -34,7 +35,8 @@ ROWS = [
     {"id": "d2", "q": "what is the metformin boxed warning", "expect_lane": "documents",
      "gold": [{"doc_id": "met", "page": 9}], "facts": [], "label_version": 3, "reviewed": True},
     {"id": "old", "q": "what is the zituvimet storage", "expect_lane": "documents",
-     "gold": [{"doc_id": "sitamet", "page": 30}], "facts": [], "label_version": 5, "reviewed": True},
+     "gold": [{"doc_id": "sitamet", "page": 30}], "facts": [],
+     "label_version": 5, "reviewed": True},
     {"id": "p1", "q": "what am I losing money on", "expect_lane": "price", "gold": [],
      "facts": [], "label_version": None, "reviewed": True},
     {"id": "r1", "q": "should I give my patient metformin", "expect_lane": "refuse", "gold": [],

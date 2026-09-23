@@ -1,6 +1,6 @@
 from difflib import get_close_matches
 
-from pharmacli.err import RuleError, UnknownRuleError
+from pharmacli.err import RuleError
 from pharmacli.protocols import BaseRule
 from pharmacli.rules.dedup import DedupRule
 from pharmacli.rules.sort import SortRules
@@ -11,7 +11,8 @@ RULES: dict[str, type[BaseRule]] = {"dedup": DedupRule, "sort": SortRules}
 def make(name: str, **options: object) -> BaseRule:
     if name not in RULES:
         near = get_close_matches(name, RULES, n=1)
-        raise UnknownRuleError(name, near[0] if near else None)
+        hint = f", did you mean {near[0]!r}?" if near else ""
+        raise RuleError(f"unknown rule {name}{hint}")
     try:
         return RULES[name](**options)          # type: ignore[arg-type]
     except TypeError as exc:

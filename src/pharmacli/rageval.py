@@ -40,7 +40,9 @@ def fact_recall(answer: str, facts: list[str]) -> float | None:
 
 def _cos(a: list[float], b: list[float]) -> float:
     na, nb = math.sqrt(sum(x * x for x in a)), math.sqrt(sum(y * y for y in b))
-    return sum(x * y for x, y in zip(a, b)) / (na * nb) if na and nb else 0.0
+    # strict: two embeddings of different length are not comparable, and the
+    # truncated cosine it would return looks like a real score
+    return sum(x * y for x, y in zip(a, b, strict=True)) / (na * nb) if na and nb else 0.0
 
 
 async def faithfulness(r: rag.Rag, answer: str, cited_texts: list[str]) -> float:

@@ -1,26 +1,25 @@
 import argparse
 import asyncio
-import math
 import logging
+import math
 import os
 import sys
 import tempfile
 import time
-from datetime import date as _date, timedelta
 from pathlib import Path
 from typing import Final
 
-from pharmacli.models.rows import COLUMNS
-
 # import reader, rules, models, errors
 from pharmacli.config import load
+from pharmacli.desk import BLOCKS, _sparkline, breakeven, format_worklists, worklists
 from pharmacli.err import FetchError, PharmaError, RuleError
+from pharmacli.models.rows import COLUMNS
 from pharmacli.output import open_output
+from pharmacli.parser import buildparse
 from pharmacli.protocols import BaseRule
 from pharmacli.reader import read_csv
-from pharmacli.rules import RULES, describe, make
+from pharmacli.rules import describe, make
 
-VERSION: Final[str] = "2.0.0"
 MAX_SKIPPED: Final[int] = 50
 
 EXIT_OK: Final[int] = 0
@@ -50,260 +49,6 @@ def parserule(raw: str) -> tuple[str, dict[str,str]]:
     # handle rule misdiagnosis and representation
     # add errors to definition
 
-# build command line parser
-def buildparse() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog= "PharmaCLI", description= "CLI tool for parsing inventory CSVs", epilog= "use -n/ --dryrun to see what would change without writing",)
-    parser.add_argument("--version", action = "version", version = f"PharmaCLI {VERSION}")
-
-    # define output input and dryrun tags
-        
-    
-    # supressing so newer iterations never stop the previous ones
-    verbosity = argparse.ArgumentParser(add_help=False)
-    verbosity.add_argument("-v", "--verbose", action="store_true", default=argparse.SUPPRESS, help="debug logging")
-
-    fileopts = argparse.ArgumentParser(add_help=False)
-    fileopts.add_argument("input", type = Path, help = "path to input CSV")
-    fileopts.add_argument("-o", "--outfile", type=Path, default=None, help="write to here instead of stdout")
-    fileopts.add_argument("-n", "--dryrun", action='store_true', help = "report only, write nothing")
-
-
-
-    commands = parser.add_subparsers(dest="command", required= True, metavar="COMMAND")
-    # add new rules command
-    clean = commands.add_parser("clean", parents=[fileopts, verbosity], help="run one or more rules")
-    clean.add_argument("--rule", action="append", default=[], metavar="NAME[:KEY=VALUE, ...]", help=f"repeatable; available: {', '.join(sorted(RULES))}")
-
-
-
-    # list rules and columns 
-    commands.add_parser("rules", parents=[verbosity], help="list the CSV cleaning rules")
-    commands.add_parser("columns", parents=[verbosity], help="list the expected columns")
-
-
-
-    # net commands
-    fetch = commands.add_parser("fetch", parents=[verbosity],help="pull NADAC records into SQLite")
-    fetch.add_argument("--workers", type=int, default=None, help="pool size / max requests in flight")
-    fetch.add_argument("--limit", type=int, default=5000,help="how many records to fetch")
-    fetch.add_argument("--db", default=None, help="SQLite file to write to")
-    fetch.add_argument("--fresh", action="store_true",help="delete the database first, so the fetch is timed from empty instead of resuming")
-    # the API takes up to 5000 rows a request. the 100 default stays because bench
-    # needs many small pages to have any concurrency to measure -- a bulk load wants
-    # the opposite, so it is a flag rather than a new constant
-    fetch.add_argument("--page-size", type=int, default=None, metavar="N", help="records per request, API max 5000 (default 100)")
-
-    # turns an NDC from the panel into an actual drug via openFDA. read-only,
-    # no API key -- the NDC Directory is open
-    look = commands.add_parser("lookup", parents=[verbosity], help="what drug is this NDC?")
-    look.add_argument("ndc", help="11-digit NDC, e.g. 00378351501")
-    look.add_argument("--db", default=None, help="SQLite file to read the price from")
-    # A flag, not a `history` command. This is enrich.local's query with LIMIT 1
-    # removed -- same table, same NDC, same --db -- and "what is this drug" and
-    # "what has it been doing" are one question at a terminal. Same call the
-    # `margin -o` comment makes above.
-    look.add_argument("--history", action="store_true",
-                      help="every weekly NADAC price for this NDC, not just the newest")
-
-    # the pharmacy's stock list. `watch` alone lists; add/rm mutate
-    watch = commands.add_parser("watch", parents=[verbosity], help="the NDCs your pharmacy stocks")
-    watch.add_argument("action", nargs="?", choices=("add", "rm", "import", "packs"),
-                       help="omit to list; `import` takes a costs CSV")
-    watch.add_argument("ndc", nargs="*", help="NDCs, or a CSV path for `import`")
-    # openFDA allows 1,000 requests a day without a key, so filling a 5,000-NDC
-    # shelf takes several runs. Cached NDCs are skipped, so re-running resumes.
-    watch.add_argument("--limit", type=int, default=200, metavar="N",
-                       help="packs: how many NDCs to look up this run (default 200)")
-    watch.add_argument("--cost", type=float, default=None,
-                       help="your acquisition cost per unit for these NDCs")
-    watch.add_argument("--db", default=None)
-
-    reo = commands.add_parser("reorder", parents=[verbosity],
-                              help="what to reorder, and when to place the order")
-    reo.add_argument("--within", type=int, default=14,
-                     help="only show drugs needing an order inside N days (default 14)")
-    reo.add_argument("--lead-days", type=int, default=LEAD_DAYS,
-                     help="wholesaler lead time in days (default 2)")
-    # NADAC reprices everything at once, so in most weeks every drug is the same
-    # age and no price move is imminent. Pointing at a mid-cycle file is the only
-    # way to see the price clock actually drive a decision.
-    reo.add_argument("--as-of", default=None, metavar="YYYY-MM-DD",
-                     help="use this NADAC file instead of the newest")
-    # same reason as `margin --top`: sorted by order_by, so the head is the
-    # part that is actually due. The totals below still count every line.
-    reo.add_argument("--top", type=int, default=40, metavar="N",
-                     help="show the N most urgent (default 40, 0 for all)")
-    reo.add_argument("--db", default=None)
-
-    ask = commands.add_parser("ask", parents=[verbosity],
-                              help="ask in English; bare `ask` lists what it answers")
-    ask.add_argument("question", nargs="?", default=None,
-                     help="the question. Omit it to see every answerable one.")
-    # Only the argument the matched question declares is read. A question that
-    # needs an NDC prompts for one when stdin is a tty; numeric knobs fall
-    # through to the underlying function's own default rather than asking.
-    ask.add_argument("--ndc", default=None)
-    ask.add_argument("--phrase", default=None, help="for the description lookup")
-    ask.add_argument("-o", "--out", default=None, metavar="FILE",
-                     help="write every shelf drug's answers to a CSV, one row per drug")
-    ask.add_argument("--db", default=None)
-
-    chk = commands.add_parser("check", parents=[verbosity],
-                              help="check an inventory CSV without importing it")
-    chk.add_argument("csv", help="columns: ndc,cost[,on_hand,monthly]")
-    chk.add_argument("--within", type=int, default=14, metavar="DAYS")
-    chk.add_argument("--dead-days", type=int, default=90, metavar="DAYS")
-    chk.add_argument("--db", default=None)
-
-    chat = commands.add_parser("chat", parents=[verbosity],
-                               help="the same questions, in a browser")
-    chat.add_argument("--port", type=int, default=8765)
-    chat.add_argument("--no-open", action="store_true", help="do not open a browser")
-    chat.add_argument("--db", default=None)
-
-    tod = commands.add_parser("today", parents=[verbosity],
-                              help="the three worklists, ranked by money")
-    tod.add_argument("--within", type=int, default=21, metavar="N",
-                     help="reorder horizon in days (default 21)")
-    # 180 days of supply is the usual line for capital that is not turning.
-    # Nothing here is 'expired' -- NADAC carries no expiry date, and guessing one
-    # would be inventing a clinical fact.
-    tod.add_argument("--dead-days", type=int, default=180, metavar="N",
-                     help="days of supply above which stock counts as dead (default 180)")
-    tod.add_argument("--db", default=None)
-
-    marg = commands.add_parser("margin", parents=[verbosity],
-                               help="where your cost sits against the NADAC benchmark")
-    # a real inventory is thousands of lines. The ranking already puts the money
-    # first, so print the head and say what was left off -- an unbounded dump is
-    # the same as no answer for someone standing at a terminal.
-    marg.add_argument("--top", type=int, default=25, metavar="N",
-                      help="show the worst N lines (default 25, 0 for all)")
-    # A MAC appeal is this same table, filed rather than read. It needs no new
-    # command: same query, same ranking, same break-even maths -- only the
-    # output format differs, and -o is already how every other command writes.
-    marg.add_argument("-o", "--outfile", default=None, metavar="FILE",
-                      help="write the underwater lines as CSV to file (a MAC appeal pack)")
-    marg.add_argument("--db", default=None)
-
-    fc = commands.add_parser("forecast", parents=[verbosity],
-                             help="which watched NDCs are likely to reprice next week")
-    # 0.25, not 0.5. Decision-curve analysis (model.net_benefit) shows net
-    # benefit is positive only across roughly 0.05-0.40 and turns NEGATIVE above
-    # ~0.40 -- at p>=0.5 acting on this model is worse than never buying ahead.
-    # The default has to sit inside the band the analysis actually supports.
-    fc.add_argument("--min-prob", type=float, default=0.25,
-                    help="hide predictions below this (net benefit is positive 0.05-0.40)")
-    fc.add_argument("--db", default=None)
-
-    sw = commands.add_parser("sweep", parents=[verbosity],
-                             help="run the tracked MLflow experiment and promote a winner")
-    # --sample bounds the sweep by NDC count, not row count: the panel is only
-    # meaningful per-NDC over time, so slicing rows would break every lag feature.
-    sw.add_argument("--sample", type=int, default=None, metavar="N",
-                    help="sweep on the first N NDCs only (fast smoke run)")
-    sw.add_argument("--db", default=None)
-
-    # Shaped like `bench`: a command that DEMONSTRATES something rather than
-    # answering a pharmacist's question. --task mirrors --workload.
-    nn = commands.add_parser("nn", parents=[verbosity],
-                             help="neural networks: backprop check, tabular net, CNN")
-    nn.add_argument("--task", default="toy", choices=("toy", "tabular", "xray"),
-                    help="toy = hand-derived backprop vs autograd, "
-                         "tabular = feed-forward net on the NADAC panel, "
-                         "xray = CNN on MedMNIST (an exercise, not a clinical tool)")
-    nn.add_argument("--epochs", type=int, default=None, help="override the default")
-    nn.add_argument("--sample", type=int, default=None, metavar="N",
-                    help="tabular only: use the first N NDCs")
-    nn.add_argument("--no-augment", action="store_true", help="xray only: turn augmentation off")
-    nn.add_argument("--no-balance", action="store_true",
-                    help="xray only: drop the class weighting, to see what it was fixing")
-    nn.add_argument("--logdir", default=None, help="TensorBoard run directory")
-    nn.add_argument("--json", default=None, metavar="FILE",
-                    help="also write the result dict here, so the numbers persist")
-    nn.add_argument("--db", default=None)
-
-    # Same shape as `nn` and `bench`: demonstrates something, is not a pharmacy
-    # feature. The corpus is nadac.description; no dataset download.
-    nlp = commands.add_parser("nlp", parents=[verbosity],
-                              help="NLP: TF-IDF bar, a fine-tuned transformer, semantic search")
-    nlp.add_argument("--task", default="baseline",
-                     choices=("baseline", "finetune", "search"),
-                     help="baseline = TF-IDF + logistic regression (the bar), "
-                          "finetune = a small transformer against it, "
-                          "search = embeddings vs the keyword search `ask` ships")
-    nlp.add_argument("--epochs", type=int, default=None)
-    nlp.add_argument("--query", action="append", default=[], metavar="TEXT",
-                     help="search only: repeatable, overrides the default queries")
-    nlp.add_argument("--json", default=None, metavar="FILE",
-                     help="also write the result dict here, so the numbers persist")
-    nlp.add_argument("--db", default=None)
-
-    # week 9: the documents behind `ask`'s documents lane. Shaped like `watch`:
-    # one command, an action, and the flags each action reads.
-    dcs = commands.add_parser("docs", parents=[verbosity],
-                              help="the RAG corpus: fetch, ingest, refresh, eval, appeal, handout")
-    dcs.add_argument("action", choices=sorted(DOCS))
-    dcs.add_argument("target", nargs="*", help="appeal: the NDC; handout: the drug")
-    # run once by the developer; the corpus.json it writes is committed, so a
-    # clean checkout needs neither the DVC database nor the inventory
-    dcs.add_argument("--from-shelf", type=int, default=None, metavar="N",
-                     help="fetch: rebuild corpus.json from the N highest-spend shelf drugs")
-    dcs.add_argument("--qa", default="tests/rag_qa.jsonl", help="eval: the answer key")
-    dcs.add_argument("--chunking", choices=("fixed", "section"), default=None)
-    dcs.add_argument("--k", type=int, default=None, help="passages retrieved per question")
-    dcs.add_argument("--retrieval-only", action="store_true",
-                     help="eval: score retrieval without generating (seconds, not minutes)")
-    dcs.add_argument("--compare", nargs=2, default=None, metavar="RUN.json",
-                     help="eval: the before/after table of two --json runs")
-    dcs.add_argument("--json", default=None, metavar="FILE",
-                     help="eval: also write the full result here")
-    dcs.add_argument("-o", "--out", default=None, metavar="FILE",
-                     help="appeal, handout: write here instead of stdout")
-    dcs.add_argument("--db", default=None)
-
-    # reimbursement: synthetic claims until a real export exists, then the check
-    clm = commands.add_parser("claims", parents=[verbosity],
-                              help="claims paid below NADAC + fee, or below your cost")
-    clm.add_argument("action", choices=("sample", "check"))
-    clm.add_argument("file", nargs="?", default=None, help="check: the claims CSV")
-    clm.add_argument("--payers", default=None, metavar="CSV",
-                     help="payer,dispensing_fee (sample writes data/payers.csv)")
-    clm.add_argument("-o", "--out", default=None, metavar="FILE",
-                     help="sample: the claims CSV (data/claims_sample.csv); check: underpaid claims CSV")
-    clm.add_argument("--days", type=int, default=30, help="sample: spread fills over N days")
-    clm.add_argument("--seed", type=int, default=7, help="sample: same seed, same file")
-    clm.add_argument("--top", type=int, default=25, metavar="N")
-    clm.add_argument("--db", default=None)
-
-    gen = commands.add_parser("generics", parents=[verbosity],
-                              help="brand stock with a cheaper NADAC generic, in $/month")
-    gen.add_argument("--top", type=int, default=25, metavar="N")
-    gen.add_argument("--db", default=None)
-
-    rec = commands.add_parser("recalls", parents=[verbosity],
-                              help="FDA drug recalls that touch your shelf")
-    rec.add_argument("--days", type=int, default=90)
-    rec.add_argument("--db", default=None)
-
-    inter = commands.add_parser("interactions", parents=[verbosity],
-                                help="what the labels say about 2-6 drugs taken together")
-    inter.add_argument("drugs", nargs="+", help="drug names or NDCs")
-
-    bench = commands.add_parser("bench", parents=[verbosity],help="time the concurrency models")
-    bench.add_argument("--workload", default="both", choices=("io", "cpu", "numpy", "both"), help="io = network fetch, cpu = parsing, numpy = vectorization, both = run each")
-    bench.add_argument("--workers", type=int, default=None)
-    bench.add_argument("--limit", type=int, default=2000)
-    bench.add_argument("--db", default=None)
-
-    tok = commands.add_parser("token", parents=[verbosity],
-                              help="mint a bearer token for the API")
-    tok.add_argument("--sub", default="cli", help="who the token is for; it lands in the logs")
-    tok.add_argument("--ttl", type=int, default=3600, help="seconds until it expires")
-
-    parser.add_argument("-v", "--verbose", action="store_true", help="debug logging")
-
-    return parser
 
 
 # obtain arguments from CL
@@ -392,18 +137,6 @@ def cmdfetch(args: argparse.Namespace) -> int:
 
 
 # NDC -> drug identity. local panel first (free), then openFDA for the label
-# 8 levels, low to high. Unicode because the alternative is a bar chart that
-# needs its own line per week; 34 weeks fit on one line this way.
-BLOCKS = "\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588"
-
-
-def _sparkline(values: list[float]) -> str:
-    lo, hi = min(values), max(values)
-    if hi == lo:
-        return BLOCKS[len(BLOCKS) // 2] * len(values)
-    return "".join(BLOCKS[min(len(BLOCKS) - 1,
-                              int((v - lo) / (hi - lo) * len(BLOCKS)))]
-                   for v in values)
 
 
 def _print_history(rows: list[tuple[str, float]], unit: str) -> None:
@@ -529,24 +262,30 @@ def read_inventory(path: str) -> tuple[list[tuple], list[tuple]]:
             if not any(c.strip() for c in raw):
                 continue                       # blank line, not worth a reason
             if len(raw) < 2:
-                skipped.append((line, "needs at least ndc,cost")); continue
+                skipped.append((line, "needs at least ndc,cost"))
+                continue
             ndc = raw[0].strip()
             if not ndc:
-                skipped.append((line, "missing NDC")); continue
+                skipped.append((line, "missing NDC"))
+                continue
             if not ndc.isdigit():
                 # the header row lands here, which is the common case and why
                 # this is a skip rather than an error
-                skipped.append((line, f"NDC {ndc!r} is not digits")); continue
+                skipped.append((line, f"NDC {ndc!r} is not digits"))
+                continue
 
             cost, err = num(raw[1], "cost")
             if err or cost is None:
-                skipped.append((line, err or "missing cost")); continue
+                skipped.append((line, err or "missing cost"))
+                continue
             oh, err = num(raw[2], "on_hand") if len(raw) > 2 else (None, None)
             if err:
-                skipped.append((line, err)); continue
+                skipped.append((line, err))
+                continue
             mo, err = num(raw[3], "monthly") if len(raw) > 3 else (None, None)
             if err:
-                skipped.append((line, err)); continue
+                skipped.append((line, err))
+                continue
             rows.append((ndc.zfill(11), cost, oh, mo))
     return rows, skipped
 
@@ -576,8 +315,7 @@ def _import_costs(conn, path: str) -> int:
 
 # the stock list. pure sqlite3, so this works on a bare install
 def cmdwatch(args: argparse.Namespace) -> int:
-    from pharmacli.store import (connect, last_priced, newest_week,
-                                 watch_add, watch_remove, watched)
+    from pharmacli.store import connect, last_priced, newest_week, watch_add, watch_remove, watched
 
     conn = connect(args.db or load().db)
     try:
@@ -755,7 +493,8 @@ def cmdnlp(args: argparse.Namespace) -> int:
         print("\nTF-IDF + LOGISTIC REGRESSION -- brand vs generic from the drug name")
         print(f"  {r['n_train']:,} train / {r['n_test']:,} test drugs, "
               f"{r['brand_rate']:.1%} brand. Split by drug, so every test name is unseen.")
-        print(f"\n  {'variant':<8}{'bal acc':>9}{'F1':>8}{'precision':>11}{'recall':>8}{'features':>10}")
+        print(f"\n  {'variant':<8}{'bal acc':>9}{'F1':>8}"
+              f"{'precision':>11}{'recall':>8}{'features':>10}")
         for k in ("word", "char"):
             v = r[k]
             print(f"  {k:<8}{v['balanced_accuracy']:>9.4f}{v['F1']:>8.4f}"
@@ -807,12 +546,13 @@ def cmdsweep(args: argparse.Namespace) -> int:
 def cmdforecast(args: argparse.Namespace) -> int:
     try:
         from pharmacli import model
-        from pharmacli.frame import load as load_frame   # pandas stays inside the
+        from pharmacli.frame import load as load_frame  # pandas stays inside the
     except ImportError:                                  # handler: a bare install
         log.error('forecast needs: pip install -e ".[analysis]"')   # must import
         return EXIT_BADIN                                            # cleanly
 
-    from pharmacli.store import connect, costs as watch_costs, watched
+    from pharmacli.store import connect, watched
+    from pharmacli.store import costs as watch_costs
 
     config = load()
     db = args.db or config.db
@@ -876,321 +616,6 @@ def cmdforecast(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# PRICE CHANGE MATHS
-#
-# Everything below rests on one measured fact: CMS reprices NADAC on a MONTHLY
-# cycle. Across 1,028,250 rows, 99% of consecutive price moves landed exactly 4
-# or 5 weeks apart, and the probability that a price moves next week depends
-# almost entirely on how old the current price is.
-#
-# These are OBSERVED rates from the panel, not estimates.
-# ─────────────────────────────────────────────────────────────────────────────
-
-# (age of price in days, P(it moves in the coming week)). Read as "up to N days".
-MOVE_ODDS: Final[tuple[tuple[int, float], ...]] = (
-    (14, 0.002),   # just repriced -- CMS almost never touches it again this soon
-    (21, 0.613),   # entering the window
-    (28, 0.960),   # THE peak. a price this old almost always moves next week
-    (35, 0.002),   # it already moved and reset; this bucket is the far side
-    (10**6, 0.045),  # off-cycle drugs -- they do not follow the monthly rhythm
-)
-
-# Expected SIGNED change in price, given that a move happens, per rate class.
-#
-# This replaced a single MEDIAN_MOVE = 0.0174 applied to every drug, plus a rule
-# that generics fall and brands rise. Measured over 227,638 real moves in the
-# panel, that rule was wrong on both counts:
-#
-#   class   moves down   E[change | move]   old model    overstated by
-#   G          61.4%         -0.681%         -1.740%          2.6x
-#   B          53.3%         +0.005%         +1.740%        362x
-#   B-ANDA     47.6%         +0.353%         +1.740%          4.9x
-#   B-BIO      51.6%         +0.039%         +1.740%         44x
-#
-# Brands are the headline error. Brand up-moves and down-moves are almost the
-# same size and almost equally likely, so they very nearly cancel -- a brand's
-# expected weekly change is essentially zero, not a 1.74% rise. On a $346
-# specialty brand the old maths showed ~$5.80/unit of expected movement where
-# the truth is about half a cent.
-#
-# One number per class, already probability-weighted, so expected_price needs no
-# separate sign rule. Derived by frame.move_profile(); re-run it to re-check.
-MOVE_EV: Final[dict[str, float]] = {
-    "G":      -0.006806,   # generics erode: more ANDA entrants, lower survey price
-    "B":       0.000048,   # brand: up and down cancel. Effectively flat.
-    "B-ANDA":  0.003532,   # authorised generic -- the one brand class that moves
-    "B-BIO":   0.000393,
-}
-
-# How often a move is DOWNWARD, per class. Not used by the maths (MOVE_EV
-# already carries it) -- this is shown to the pharmacist, because "generics fall
-# 61% of the time" is a fact you can act on and "-0.68%" is not.
-DOWN_SHARE: Final[dict[str, float]] = {
-    "G": 0.614, "B": 0.533, "B-ANDA": 0.476, "B-BIO": 0.516,
-}
-
-# Midpoint of the 22-28 day repricing peak. Used to answer "how many days until
-# this price is likely to change".
-CYCLE_PEAK: Final[int] = 24
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# THE REPRICING CALENDAR
-#
-# 8 of 33 files in the panel carry 11.7-17.9% of NDCs moving >=5%; the other 25
-# carry 0.00-0.45%. So "will prices move next week" is not a forecasting problem
-# -- it is a date, and CMS publishes it in advance: the NADAC Monthly file lands
-# on the first Monday on or after the 15th, and the weekly file carrying it is
-# dated that Wednesday.
-#
-# That rule reproduces ALL 8 observed repricing files in the panel exactly, with
-# no fitting and no model. What the trained model is genuinely for is the
-# remaining question -- WHICH drugs move inside that file -- where it lifts
-# precision from the calendar's 0.151 to 0.417.
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _monthly_file(year: int, month: int) -> _date:
-    d = _date(year, month, 15)
-    d += timedelta(days=(7 - d.weekday()) % 7)   # first Monday on or after the 15th
-    return d + timedelta(days=2)                 # the Wednesday file that carries it
-
-
-def next_reprice(after: _date) -> _date:
-    d = _monthly_file(after.year, after.month)
-    if d <= after:                               # this month's has already landed
-        y, m = (after.year + 1, 1) if after.month == 12 else (after.year, after.month + 1)
-        d = _monthly_file(y, m)
-    return d
-
-
-def move_odds(age_days: float) -> float:
-    for limit, odds in MOVE_ODDS:
-        if age_days <= limit:
-            return odds
-    return MOVE_ODDS[-1][1]
-
-
-def expected_price(price: float, age_days: float, rate_class: str) -> float:
-    # an unrecognised class is treated as plain brand: the most conservative
-    # option, since B is the flattest and will not invent movement that is not there
-    ev = MOVE_EV.get(rate_class, MOVE_EV["B"])
-    return price * (1 + ev * move_odds(age_days))
-
-
-def days_to_reprice(age_days: float) -> float:
-    return max(0.0, CYCLE_PEAK - age_days)
-
-
-# how long the wholesaler takes. Most community pharmacies get next-day
-# delivery on a daily order cycle; two days is the safe planning assumption.
-LEAD_DAYS: Final[int] = 2
-
-# Smallest dollar swing worth putting in front of a pharmacist as a REASON to
-# move an order. Measured on 2026-07-08, a peak repricing week where 4,808 of
-# 4,918 shelf positions had a likely move: median swing $0.09, p95 $0.69, max
-# $4.08, and $880 across the whole shelf.
-#
-# The dispensing fee ($10.64) was the obvious candidate and is wrong -- it
-# silences every row, even on a peak week. It would be the right bar if acting
-# cost something, but re-timing an order you are placing anyway costs nothing.
-# So the bar is only "loud enough not to be noise". A dollar admits ~109
-# positions on a peak week and rejects the $0.26 advice that reading a raw
-# swing produces.
-#
-# The honest headline is that per-drug timing is worth CENTS; the money is the
-# aggregate, which the worklist already totals.
-MATERIAL_SWING: Final[float] = 1.00
-
-
-def reorder_advice(on_hand: float, monthly: float, age_days: float,
-                   price: float, rate_class: str,
-                   lead_days: int = LEAD_DAYS, min_swing: float = 0.0) -> dict:
-    daily = monthly / 30.0 if monthly else 0.0
-    if daily <= 0:
-        return {"action": "no data", "why": "no dispensing volume recorded",
-                "days_left": None, "order_by": None, "qty": 0, "saving": 0.0}
-
-    days_left = on_hand / daily
-    order_by = days_left - lead_days
-    to_reprice = days_to_reprice(age_days)
-    qty = round(monthly)                       # one month of demand
-    projected = expected_price(price, age_days, rate_class)
-    swing = (projected - price) * qty          # dollars, over the order quantity
-
-    # A move has to be LIKELY before it is worth bending the order around.
-    # Without this gate a drug that just repriced (odds 0.002) would be told to
-    # wait 17 days for a saving of nothing -- the schedule says a move is coming
-    # eventually, but not soon enough to plan against.
-    likely = move_odds(age_days) >= 0.5
-
-    # ...and it has to be worth MONEY, not just likely. Correcting the per-class
-    # move sizes shrank brand swings by ~362x, which exposed this gap: without a
-    # floor the advice became "order now to capture $0.26" on 1,800 units, a
-    # decision no pharmacist should be asked to make. See MATERIAL_SWING for the
-    # measurement behind the default.
-    material = abs(swing) >= min_swing
-
-    if order_by <= 0:
-        action, why, act_on_price = "order now", "at or past stock-out", False
-    elif likely and material and swing < 0 and to_reprice < order_by:
-        # price expected to fall and there is room on the shelf to wait for it.
-        # to_reprice == 0 means the drop lands in THIS week's file -- "wait 0d"
-        # reads as a bug, so say what it means: hold, the new price is imminent.
-        action = "hold" if to_reprice < 1 else f"wait {to_reprice:.0f}d"
-        # WRONG TENSE, fixed: this used to read "drop lands in this week's file".
-        # The file on screen IS this week's, so that sentence claimed the drop was
-        # already in the price shown -- while still advising a hold, which is a
-        # contradiction. move_odds is P(moves in the COMING week), and
-        # to_reprice == 0 means the cycle peak has passed, so the move is OVERDUE
-        # and lands in the NEXT file. Say that instead.
-        why = (f"reprice overdue, {move_odds(age_days):.0%} chance in next week's file"
-               if to_reprice < 1 else
-               f"generic erosion due in {to_reprice:.0f}d")
-        why += f", {order_by:.0f}d of slack"
-        act_on_price = True
-    elif likely and material and swing > 0 and to_reprice < order_by:
-        # price expected to rise before you would otherwise have ordered
-        action, why, act_on_price = "order now", f"brand rise likely in {to_reprice:.0f}d", True
-    else:
-        action = f"in {order_by:.0f}d"
-        why = "routine -- no likely move inside the window"
-        act_on_price = False
-
-    # saving is only meaningful when the timing was actually changed for price
-    return {"action": action, "why": why, "days_left": days_left,
-            "order_by": order_by, "qty": qty,
-            "saving": abs(swing) if act_on_price else 0.0}
-
-
-def breakeven(cost: float, nadac: float, fee: float, unit: str) -> str:
-    gap = cost - nadac
-    if gap <= 0:
-        return "never"
-    qty = fee / gap
-    # under one unit means the gap alone eats the whole fee: every script loses
-    # money whatever its size. "0 ML" reads as a rounding bug, so say what it is.
-    return f"{qty:,.0f} {unit}" if qty >= 1 else "ANY qty"
-
-
-# The index. A pharmacist does not ask "when will this price move", they ask
-# "what do I do today" -- and the answer is spread across three commands they
-# would have to know to run. This ranks the three by MONEY, because that is the
-# order they should be worked in, and points at the command that does each one.
-#
-# Pure sqlite3: no pandas, no model. The two-dependency install gets this.
-# The three worklists, as DATA. Split out of cmdtoday so `ask` answers the same
-# three questions from the same arithmetic -- the CLI and the question menu
-# cannot drift, because they share one computation and one formatter.
-def worklists(db: str, within: int = 14, dead_days: int = 90,
-              as_of: str | None = None, lead_days: int = LEAD_DAYS,
-              shelf: tuple[dict, dict] | None = None) -> dict:
-    from pharmacli.store import connect, costs, last_priced, newest_week, stock
-
-    conn = connect(db)
-    try:
-        week = as_of or newest_week(conn)
-        if week is None:
-            return {"error": "no NADAC data. pharmacli fetch"}
-        if as_of and not conn.execute(
-                "SELECT 1 FROM nadac WHERE as_of_date=? LIMIT 1", (as_of,)).fetchone():
-            have = [w for (w,) in conn.execute(
-                "SELECT DISTINCT as_of_date FROM nadac"
-                " ORDER BY as_of_date DESC LIMIT 6")]
-            return {"error": f"no NADAC file for {as_of}. recent: {', '.join(have)}"}
-        mine, qty = shelf if shelf else (costs(conn), stock(conn))
-        marks = last_priced(conn)
-        if not mine:
-            return {"error": "no inventory recorded. "
-                             "pharmacli watch import data/pharmacy_inventory.csv"}
-        rows = conn.execute(
-            "SELECT ndc, description, CAST(unit_price AS REAL), pricing_unit,"
-            " rate_class, CAST(julianday(as_of_date)-julianday(effective_date) AS INT)"
-            " FROM nadac WHERE as_of_date = ? AND ndc IN (%s)"
-            % ",".join("?" * len(mine)), [week, *mine]).fetchall()
-    finally:
-        conn.close()
-
-    under, buy, dead = [], [], []
-    for ndc, desc, nadac, unit, rc, age in rows:
-        oh, mo = qty.get(ndc, (None, None))
-        gap = mine[ndc] - nadac
-        if gap > 0:
-            under.append((gap * (mo or 0), ndc, desc, gap, unit))
-        if oh is not None and mo:
-            a = reorder_advice(oh, mo, age, mine[ndc], rc, lead_days,
-                               min_swing=MATERIAL_SWING)
-            if a["order_by"] is not None and a["order_by"] <= within:
-                buy.append((a, ndc, desc, unit, age))
-            if oh / (mo / 30.0) >= dead_days:
-                dead.append((oh * mine[ndc], ndc, desc, oh / (mo / 30.0)))
-    # you hold stock in a drug CMS has stopped pricing
-    gone = [n for n in mine if marks.get(n) != week and (qty.get(n) or (0,))[0]]
-    # ...and NDCs with no row in THIS file at all. For `today` these overlap with
-    # `gone`; for a CSV of unknown drugs it is the whole point of the check.
-    unpriced = sorted(set(mine) - {r[0] for r in rows})
-
-    # The calendar leads, because on 25 of 33 files the honest answer to "what
-    # moves next week" is "nothing, and here is the date when something will".
-    nxt = next_reprice(_date.fromisoformat(week))
-    return {"week": week, "priced": len(mine), "under": under, "buy": buy,
-            "dead": dead, "gone": gone, "unpriced": unpriced,
-            "bleed": sum(x[0] for x in under),
-            "timing": sum(a["saving"] for a, *_ in buy),
-            "capital": sum(x[0] for x in dead),
-            "next_reprice": nxt,
-            "days_to_reprice": (nxt - _date.fromisoformat(week)).days}
-
-
-# cmdtoday's print block with `print(` removed. Kept as a list of lines so
-# `ask` can reuse the exact wording without re-implementing the formatting --
-# if this and worklists() ever disagree, test_ask catches it.
-def format_worklists(w: dict, within: int = 14, dead_days: int = 90) -> list[str]:
-    dtr = w["days_to_reprice"]
-    out = ["", f"{w['week']} NADAC file  ·  {w['priced']:,} shelf positions"]
-    if dtr > 7:
-        out.append(f"next repricing file {w['next_reprice']} ({dtr} days away)"
-                   " -- prices hold until then")
-    else:
-        out.append(f"next repricing file {w['next_reprice']} ({dtr} days away)"
-                   " -- THIS is the week")
-    out.append("")
-
-    # APPEAL first: measured at 8x the entire timing play on this inventory.
-    if w["under"]:
-        out.append(f"APPEAL   {len(w['under']):,} positions cost more than NADAC"
-                   f"{'':>8}${w['bleed']:,.2f}/month")
-        for _, ndc, desc, gap, unit in sorted(w["under"], reverse=True)[:3]:
-            out.append(f"         {str(desc)[:34]:<35} +${gap:.5f}/{unit}")
-        out.append("         pharmacli margin -o appeal.csv")
-    else:
-        out.append("APPEAL   nothing underwater -- every recorded cost is at or below NADAC")
-
-    out.append("")
-    if w["buy"]:
-        out.append(f"BUY      {len(w['buy']):,} of {w['priced']:,} need an order"
-                   f" inside {within} days{'':>6}${w['timing']:,.2f} timing value")
-        for a, ndc, desc, _, _ in sorted(w["buy"], key=lambda x: x[0]["order_by"])[:3]:
-            out.append(f"         {str(desc)[:34]:<35} {a['action']}")
-        out.append("         pharmacli reorder")
-    else:
-        out.append(f"BUY      nothing needs ordering inside {within} days")
-
-    out.append("")
-    if w["dead"] or w["gone"]:
-        if w["dead"]:
-            out.append(f"CLEAR    {len(w['dead']):,} positions over {dead_days}d of supply"
-                       f"{'':>10}${w['capital']:,.2f} tied up")
-            for _, ndc, desc, days in sorted(w["dead"], reverse=True)[:3]:
-                out.append(f"         {str(desc)[:34]:<35} {days:,.0f} days of supply")
-        if w["gone"]:
-            out.append(f"         {len(w['gone']):,} stocked NDCs are no longer priced by CMS")
-    else:
-        # an empty result is an ANSWER. Say which two checks came back clean.
-        out.append(f"CLEAR    nothing dead -- every position turns inside {dead_days} days,")
-        out.append("         and every stocked NDC is still in the newest file")
-    return out
-
 
 def cmdtoday(args: argparse.Namespace) -> int:
     w = worklists(args.db or load().db, args.within, args.dead_days)
@@ -1218,10 +643,11 @@ def cmdmargin(args: argparse.Namespace) -> int:
         # hoisted out of the query: an appeal argued from an unnamed file is
         # unarguable, so every exported row has to carry the date it came from
         week = newest_week(conn)
+        holes = ",".join("?" * len(mine))
         rows = conn.execute(
             "SELECT ndc, description, CAST(unit_price AS REAL), pricing_unit"
             " FROM nadac WHERE as_of_date = ?"
-            " AND ndc IN (%s)" % ",".join("?" * len(mine)),
+            f" AND ndc IN ({holes})",
             [week, *mine]).fetchall()
     finally:
         conn.close()
@@ -1327,7 +753,7 @@ def cmdreorder(args: argparse.Namespace) -> int:
     print("-" * 104)
     saved = 0.0
     limit = args.top or len(plan)
-    for i, (a, ndc, desc, unit, age) in enumerate(plan):
+    for i, (a, ndc, desc, _unit, _age) in enumerate(plan):
         saved += a["saving"]                     # total spans every line
         if i >= limit:
             continue
@@ -1393,9 +819,35 @@ def cmdcheck(args: argparse.Namespace) -> int:
 
 
 def cmdchat(args: argparse.Namespace) -> int:
-    from pharmacli.chat import serve
+    import socket
+    import threading
+    import webbrowser
 
-    serve(args.db, args.port, not args.no_open)
+    import uvicorn
+
+    from pharmacli.serve import app, issue
+
+    if args.db:
+        os.environ["PHARMACLI_DB"] = args.db      # the routes read it from config
+    # the token rides in the fragment, so it reaches the page without ever being
+    # sent to the server or landing in a log
+    url = f"http://127.0.0.1:{args.port}/chat#token={issue('chat')}"
+    print(f"pharmacli chat on {url}   (ctrl-c to stop)")
+
+    def open_when_up() -> None:
+        # uvicorn has not bound the port yet, and the first boot builds the
+        # panel, so opening the browser now would show a refused connection
+        for _ in range(600):
+            with socket.socket() as probe:
+                if probe.connect_ex(("127.0.0.1", args.port)) == 0:
+                    webbrowser.open(url)
+                    return
+            time.sleep(0.1)
+
+    if not args.no_open:
+        threading.Thread(target=open_when_up, daemon=True).start()
+    # 127.0.0.1, never 0.0.0.0: it answers with your acquisition costs
+    uvicorn.run(app, host="127.0.0.1", port=args.port, log_config=None)
     return EXIT_OK
 
 
@@ -1512,9 +964,7 @@ def _docs_ingest(args: argparse.Namespace) -> int:
 def _docs_eval(args: argparse.Namespace) -> int:
     import json
 
-    import httpx
-
-    from pharmacli import docs, rag, rageval
+    from pharmacli import rag, rageval
 
     if args.compare:
         try:
@@ -1546,9 +996,8 @@ def _docs_eval(args: argparse.Namespace) -> int:
 
 
 def _docs_appeal(args: argparse.Namespace) -> int:
-    import httpx
 
-    from pharmacli import docs, rag
+    from pharmacli import rag
 
     if len(args.target) != 1:
         log.error("usage: pharmacli docs appeal NDC [-o appeal.md]")
@@ -1693,7 +1142,8 @@ def cmdinteractions(args: argparse.Namespace) -> int:
         log.error("cannot read %s: %s", docs.CORPUS, exc)
         return EXIT_BADIN
     except (httpx.HTTPError, ConnectionError) as exc:
-        log.error("interactions need Chroma and Ollama -- docker compose up -d chroma ollama (%s)", exc)
+        log.error("interactions need Chroma and Ollama -- "
+                  "docker compose up -d chroma ollama (%s)", exc)
         return EXIT_NETWORK
     return EXIT_OK
 

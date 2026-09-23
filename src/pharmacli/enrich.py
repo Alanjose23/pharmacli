@@ -19,7 +19,7 @@ NDC_URL = "https://api.fda.gov/drug/ndc.json"
 
 
 def pad(hyphenated: str) -> str | None:
-   
+
     # open fda to ndc 11 digit form
     parts = hyphenated.split("-")
     if len(parts) != 3:
@@ -63,7 +63,7 @@ def lookup(ndc: str, timeout: int | None = None) -> dict | None:
             log.warning("openFDA lookup failed: %s", type(exc).__name__)
             return None
         if r.status_code == 404:
-            continue           # openFDA returns 404 for no matches 
+            continue           # openFDA returns 404 for no matches
         if r.status_code != 200:
             log.warning("openFDA HTTP %d for %s", r.status_code, product)
             continue
@@ -110,4 +110,6 @@ def local(ndc: str, db: str | None = None) -> dict | None:
         return None
     keys = ("description", "unit_price", "pricing_unit", "rate_class", "otc",
             "effective_date", "as_of_date")
-    return dict(zip(keys, row))
+    # strict: these keys ARE the SELECT list above. Drift between them would
+    # silently return a row with fields missing rather than fail
+    return dict(zip(keys, row, strict=True))

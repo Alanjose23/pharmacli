@@ -72,9 +72,18 @@ button.send:hover{color:#1a1a1a}
 <script>
 const log = document.getElementById('log'), qbox = document.getElementById('q');
 
+// The token arrives in the URL fragment -- the one part of a URL a browser
+// never sends to a server and no proxy logs. Keep it in memory, strip it from
+// the address bar, and put it on every call. The page itself is open; nothing
+// below it is.
+const TOKEN = new URLSearchParams(location.hash.slice(1)).get('token') || '';
+history.replaceState(null, '', location.pathname);
+const api = (path, opts = {}) => fetch('/chat' + path, {...opts,
+  headers: {...(opts.headers || {}), Authorization: 'Bearer ' + TOKEN}});
+
 // the pills ARE the registry -- fetched, never hardcoded, so a new question in
 // QUESTIONS shows up here with no edit to this page
-fetch('/prompts').then(r => r.json()).then(ls => {
+api('/prompts').then(r => r.json()).then(ls => {
   document.getElementById('pills').innerHTML = ls.slice(0, 6)
     .map(l => `<button class="pill">${l}</button>`).join('');
   document.querySelectorAll('.pill').forEach(
@@ -96,7 +105,7 @@ async function send(q) {
   add('you', `<span>${esc(q)}</span>`);
   const pending = add('bot', '<pre>...</pre>');
   try {
-    const r = await fetch('/ask?q=' + encodeURIComponent(q));
+    const r = await api('/ask?q=' + encodeURIComponent(q));
     const d = await r.json();
     pending.innerHTML = (d.label ? `<div class="label">· ${esc(d.label)}</div>` : '')
                       + `<pre>${esc(d.text)}</pre>`;
@@ -125,12 +134,12 @@ function drawTray(d) {
   document.querySelectorAll('.sug').forEach(b => b.onclick = () => send(b.dataset.q));
   const save = document.getElementById('save'), drop = document.getElementById('drop');
   if (save) save.onclick = async () => {
-    const j = await (await fetch('/save', {method: 'POST'})).json();
+    const j = await (await api('/save', {method: 'POST'})).json();
     save.textContent = j.error ? j.error : `Saved ${j.saved.toLocaleString()} rows`;
     save.disabled = true;
   };
   if (drop) drop.onclick = async () => {
-    await fetch('/clear', {method: 'POST'});
+    await api('/clear', {method: 'POST'});
     drawTray(null);
   };
 }
@@ -139,8 +148,8 @@ csv.onchange = async () => {
   const file = csv.files[0];
   if (!file) return;
   drawTray({name: file.name, error: 'reading…', reasons: []});
-  const r = await fetch('/upload', {method: 'POST', body: await file.text(),
-                                    headers: {'X-Filename': file.name}});
+  const r = await api('/upload', {method: 'POST', body: await file.text(),
+                                  headers: {'X-Filename': file.name}});
   drawTray(await r.json());
   csv.value = '';
 };

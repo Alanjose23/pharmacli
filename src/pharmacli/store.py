@@ -3,8 +3,8 @@
 
 import logging
 import sqlite3
-from datetime import date
 from collections.abc import Sequence
+from datetime import date
 
 from pharmacli.models.medicine import Medicine
 
@@ -97,7 +97,7 @@ def insert(conn: sqlite3.Connection, records: Sequence[Medicine]) -> int:
         for med in records
     ]
     before = conn.total_changes
-    
+
     conn.executemany(
         "INSERT OR IGNORE INTO nadac"
         " (ndc, description, unit_price, pricing_unit, effective_date, as_of_date, otc,"
@@ -140,7 +140,8 @@ def watch_add(conn: sqlite3.Connection, ndcs: Sequence[str],
 
 def watch_cost(conn: sqlite3.Connection,
                rows: Sequence[tuple[str, float, float | None, float | None]]) -> int:
-    # upserts inventory file, so importing next month is an update not a duplicate, and adds ndcs later updated
+    # upserts inventory file, so importing next month is an update not a
+    # duplicate, and adds ndcs later updated
     today = date.today().isoformat()
     vals = [(n.strip().zfill(11), today, c, oh, mo) for n, c, oh, mo in rows]
     before = conn.total_changes
@@ -161,7 +162,7 @@ def costs(conn: sqlite3.Connection) -> dict[str, float]:
 
 
 def stock(conn: sqlite3.Connection) -> dict[str, tuple[float | None, float | None]]:
-    
+
     # inventory file is allowed to carry cost only
     return {n: (oh, mo) for n, oh, mo in
             conn.execute("SELECT ndc, on_hand, monthly FROM watch")}

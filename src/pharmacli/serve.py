@@ -21,14 +21,12 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
-import numpy as np
-import pandas as pd
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
-from pharmacli import model, rag
+from pharmacli import rag
 from pharmacli.config import load as load_config
 
 log = logging.getLogger(__name__)
@@ -143,6 +141,9 @@ def caller(cred: HTTPAuthorizationCredentials | None = Depends(bearer)) -> str:
 
 # ── boot ─────────────────────────────────────────────────────────────────────
 def _load_model(cfg) -> None:
+    # pandas and sklearn are the [analysis] extra, and only /predict needs them.
+    # Imported here so `pharmacli chat` and the document endpoints run without.
+    from pharmacli import model
     from pharmacli.frame import load as load_frame
 
     path = Path(cfg.model_path)
@@ -252,12 +253,6 @@ def get_rag() -> rag.Rag:
     return S["rag"]
 
 
-def get_model() -> dict:
-    if not S.get("card"):
-        raise HTTPException(503, f"no model is loaded: {S.get('model_error', 'not started')}")
-    return S
-
-
 def _record(timings: dict, tokens: dict, who: str, refused: str | None) -> None:
     for stage, ms in timings.items():
         M["stages"][stage].append(ms)
@@ -331,13 +326,20 @@ def metrics():
 
 # ── behind a token ───────────────────────────────────────────────────────────
 @app.post("/predict")
-def predict(req: PredictIn, who: str = Depends(caller), state: dict = Depends(get_model)):
+def predict(req: PredictIn, who: str = Depends(caller)):
+    import numpy as np
+    import pandas as pd
+
+    from pharmacli import model
+
+    if not S.get("card"):
+        raise HTTPException(503, f"no model is loaded: {S.get('model_error', 'not started')}")
     # Layer 2: is this a thing we know about?
-    if req.ndc not in state["live"].index:
-        raise HTTPException(404, f"NDC {req.ndc} is not in the {state['week']} NADAC "
+    if req.ndc not in S["live"].index:
+        raise HTTPException(404, f"NDC {req.ndc} is not in the {S['week']} NADAC "
                                  f"file. Run `pharmacli fetch` for a newer file, "
                                  f"or check the NDC.")
-    row = state["live"].loc[req.ndc].copy()
+    row = S["live"].loc[req.ndc].copy()
 
     if req.overrides:
         for k, v in req.overrides.model_dump(exclude_none=True).items():
@@ -350,7 +352,7 @@ def predict(req: PredictIn, who: str = Depends(caller), state: dict = Depends(ge
     # Layer 3: is this row inside the world the model was trained on? A model
     # asked about a price 3,000 days old will answer confidently and be wrong;
     # refusing is more useful than a number nobody can act on.
-    for col, (lo, hi) in state["card"]["bounds"].items():
+    for col, (lo, hi) in S["card"]["bounds"].items():
         v = row.get(col)
         if v is not None and pd.notna(v) and not (lo <= float(v) <= hi):
             raise HTTPException(422, f"{col}={float(v):.4g} is outside the range this "
@@ -361,19 +363,19 @@ def predict(req: PredictIn, who: str = Depends(caller), state: dict = Depends(ge
     # zeroes them, so the answer is valid, just built on less information.
     warnings = [f"{c}={row[c]!r} was not seen in training; prediction uses the "
                 f"numeric features only for this field"
-                for c, seen in state["card"]["categories"].items()
+                for c, seen in S["card"]["categories"].items()
                 if pd.notna(row.get(c)) and str(row[c]) not in seen]
 
     X = pd.DataFrame([row])[model.NUMERIC + model.CATEGORICAL]
-    p = float(state["pipe"].predict_proba(X)[0, 1])
-    thr = state["card"]["threshold"]
+    p = float(S["pipe"].predict_proba(X)[0, 1])
+    thr = S["card"]["threshold"]
     return {
         "ndc": req.ndc, "description": str(row["description"]),
         "p_moves": round(p, 4), "threshold": round(thr, 4),
         "verdict": "buy ahead" if p >= thr else "hold",
         "unit_price": round(float(row["unit_price"]), 5),
         "age_days": None if pd.isna(row["age_days"]) else int(row["age_days"]),
-        "as_of": state["week"], "model": state["version"], "warnings": warnings,
+        "as_of": S["week"], "model": S["version"], "warnings": warnings,
     }
 
 
@@ -402,3 +404,104 @@ async def ask_stream(req: AskIn, who: str = Depends(caller), r: rag.Rag = Depend
     # the response; only the body is late.
     return StreamingResponse(events(), media_type="text/event-stream",
                              headers={"cache-control": "no-store"})
+
+
+# ── the chat page, served by the same app ───────────────────────────────────
+# Was chat.py: 142 lines of http.server with its own routing, its own threading
+# server and its own JSON writer, next to this one. The page is unchanged; only
+# what serves it is. `pharmacli chat` now runs uvicorn on 127.0.0.1.
+
+CHAT_PAGE = Path(__file__).with_name("chat.html").read_text(encoding="utf-8")
+
+# ponytail: one upload slot, because `chat` is one local person looking at their
+# own shelf. Add a session id the day it serves more than one.
+UPLOAD: dict = {}
+MAX_UPLOAD = 5 * 1024 * 1024          # a 5,000-line inventory CSV is ~200KB
+
+
+@app.get("/chat", response_class=HTMLResponse)
+def chat_page():
+    # Open, because a browser navigating to a page cannot send a header. The
+    # page is a shell: every endpoint below it needs the token, which reaches
+    # it in the URL fragment -- the one part of a URL browsers never send.
+    return CHAT_PAGE
+
+
+@app.get("/chat/prompts")
+def chat_prompts(who: str = Depends(caller)):
+    from pharmacli import ask
+
+    return [label for label, _, _ in ask.QUESTIONS]
+
+
+@app.get("/chat/ask")
+def chat_ask(q: str, who: str = Depends(caller)):
+    from pharmacli import ask
+
+    # match() once, here, only to strip the label's own words out of the phrase
+    # arg; answer() hands the label back so it is not re-derived
+    ranked = ask.match(q)
+    guess = ranked[0][1] if ranked and ranked[0][0] >= ask.CUTOFF else ""
+    held = UPLOAD.get("held")
+    label, lines = ask.answer(q, db=load_config().db, shelf=held and held["shelf"],
+                              **ask.args_from(q, guess))
+    text = "\n".join(lines)
+    if held and label:
+        text = f"from {held['name']} (not saved)\n\n{text}"
+    return {"label": label, "text": text}
+
+
+@app.post("/chat/upload")
+async def chat_upload(request: Request, who: str = Depends(caller)):
+    import tempfile
+
+    from pharmacli import ask
+    from pharmacli.cli import read_inventory
+
+    name = request.headers.get("x-filename") or "inventory.csv"
+    empty = {"name": name, "lines": 0, "skipped": 0, "reasons": [], "suggest": []}
+    # the length header first, so an oversized file is refused before it is read
+    if int(request.headers.get("content-length") or 0) > MAX_UPLOAD:
+        return empty | {"error": f"file is larger than {MAX_UPLOAD // 2**20} MB"}
+
+    with tempfile.NamedTemporaryFile("wb", suffix=".csv", delete=False) as fh:
+        fh.write(await request.body())
+        path = fh.name
+    try:
+        rows, skipped = read_inventory(path)
+    except OSError as exc:
+        return empty | {"error": f"cannot read the file: {exc}"}
+    finally:
+        os.remove(path)
+
+    reasons = [f"line {line}: {why}" for line, why in skipped[:5]]
+    if not rows:
+        UPLOAD.pop("held", None)
+        return empty | {"skipped": len(skipped), "reasons": reasons,
+                        "error": "no usable ndc,cost rows"}
+    shelf = ({n: c for n, c, _, _ in rows}, {n: (oh, mo) for n, _, oh, mo in rows})
+    UPLOAD["held"] = {"name": name, "rows": rows, "shelf": shelf}
+    return {"name": name, "lines": len(rows), "skipped": len(skipped), "reasons": reasons,
+            "suggest": ask.suggestions(load_config().db, shelf)}
+
+
+@app.post("/chat/save")
+def chat_save(who: str = Depends(caller)):
+    from pharmacli.store import connect, watch_cost
+
+    held = UPLOAD.get("held")
+    if not held:
+        return {"error": "nothing attached"}
+    conn = connect(load_config().db)
+    try:
+        changed = watch_cost(conn, held["rows"])
+    finally:
+        conn.close()
+    UPLOAD.pop("held")          # the shelf holds it now; answer from there
+    return {"saved": len(held["rows"]), "changed": changed}
+
+
+@app.post("/chat/clear")
+def chat_clear(who: str = Depends(caller)):
+    UPLOAD.pop("held", None)
+    return {"ok": True}

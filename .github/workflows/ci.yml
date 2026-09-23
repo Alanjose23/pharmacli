@@ -28,6 +28,15 @@ jobs:
                   python -m pip install --upgrade pip
                   pip install -e .
 
+            # ruff does not vary across the matrix -- target-version is pinned in
+            # pyproject -- so one leg is enough. Not a declared dependency, for
+            # the same reason mypy is not: it is a tool, not a requirement.
+            - name: Lint
+              if: matrix.python-version == '3.12'
+              run: |
+                  pip install ruff
+                  ruff check src tests
+
             - name: Verify Executable Creation
               run: pharmacli --help
 
@@ -64,3 +73,27 @@ jobs:
 
             - name: Verify Vectorization Benchmark
               run: pharmacli bench --workload numpy
+
+            # One leg only: the image does not vary across the python matrix, and
+            # building it three times buys nothing. Without this step a broken
+            # Dockerfile ships silently and is found in front of a reviewer.
+            - name: Build the image and smoke test it
+              if: matrix.python-version == '3.12'
+              run: |
+                  docker build -t pharmacli-api .
+                  docker run -d --name api -e PHARMACLI_JWT_SECRET=ci -p 8000:8000 pharmacli-api
+                  for _ in $(seq 30); do
+                      curl -sf localhost:8000/health >/dev/null && break
+                      sleep 2
+                  done
+                  # asserts the committed demo fixture actually loaded: without it
+                  # this proves only that the process started
+                  python - <<'EOF'
+                  import json, urllib.request
+                  d = json.load(urllib.request.urlopen("http://localhost:8000/health"))
+                  assert d["model"] == "pharmacli-mover-demo/0", d
+                  assert d["ndcs"] > 0, d
+                  print(f"smoke ok: {d['model']} over {d['ndcs']} NDCs")
+                  EOF
+                  docker logs api
+                  docker rm -f api

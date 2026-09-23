@@ -8,7 +8,6 @@ import pandas as pd
 
 from pharmacli.config import load as _config
 
-
 # columns that are repeated for all rows
 CATEGORICAL = (
     "ndc",
@@ -47,9 +46,10 @@ def load(db: str | sqlite3.Connection | None = None) -> pd.DataFrame:
 
     return df.sort_values(["ndc", "as_of_date"], ignore_index=True)
 
-# weekly change function per NDC, not applicable in some instances, such as no previous observation and over a week change
+# weekly change function per NDC, not applicable in some instances, such as no
+# previous observation and over a week change
 def weekly_change(df: pd.DataFrame) -> pd.DataFrame:
-  
+
     # re-sort
     out = df.sort_values(["ndc", "as_of_date"], ignore_index=True)
     grouped = out.groupby("ndc", observed=True)

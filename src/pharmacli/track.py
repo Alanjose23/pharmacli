@@ -107,7 +107,7 @@ def sidecar(fitted, Xtr, meta: dict) -> dict:
         # unseen categories are warned about, not rejected: the OneHotEncoder is
         # handle_unknown="ignore", so the prediction is valid, only weaker.
         "categories": {c: [str(v) for v in cats]
-                       for c, cats in zip(CATEGORICAL, hot.categories_)},
+                       for c, cats in zip(CATEGORICAL, hot.categories_, strict=True)},
     }
 
 
@@ -118,7 +118,8 @@ def main(db: str | None = None, sample: int | None = None) -> int:
     import os
     os.environ.setdefault("MLFLOW_DISABLE_TELEMETRY", "1")
 
-    import mlflow                                  # heavy; dev-only, never in serve
+    import mlflow  # heavy; dev-only, never in serve
+
     from pharmacli.frame import load as load_frame
 
     mlflow.set_tracking_uri(TRACKING_URI)

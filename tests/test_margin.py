@@ -2,6 +2,7 @@ import argparse
 import csv
 
 from conftest import row
+
 from pharmacli.cli import EXIT_OK, cmdmargin
 from pharmacli.models.medicine import Medicine
 from pharmacli.store import connect, insert, watch_cost

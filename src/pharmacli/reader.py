@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from pharmacli.err import InputError
+from pharmacli.err import PharmaError
 from pharmacli.models.medicine import Medicine
 from pharmacli.models.rows import COLUMNS, RawRow, SkippedRow
 
@@ -22,7 +22,7 @@ def read_csv(path: Path) -> ParseReport:
         # row does not take down the whole file; caught per-row below
         stream = open(path, newline="", encoding="utf-8-sig", errors="replace")
     except OSError as exc:
-        raise InputError(f"{path}: {exc}") from exc
+        raise PharmaError(f"{path}: {exc}") from exc
 
     with stream:
         reader = csv.reader(stream)
@@ -35,7 +35,7 @@ def read_csv(path: Path) -> ParseReport:
 
         found = tuple(cell.strip() for cell in header)
         if found != COLUMNS:
-            raise InputError(f"{path}: header has {len(found)} columns, expected {len(COLUMNS)}")
+            raise PharmaError(f"{path}: header has {len(found)} columns, expected {len(COLUMNS)}")
 
         firstcol = COLUMNS[0].casefold()
         records: list[Medicine] = []
@@ -66,7 +66,9 @@ def read_csv(path: Path) -> ParseReport:
                 skipped.append(SkippedRow(line, "skipped header row"))
                 continue
 
-            row = cast(RawRow, dict(zip(COLUMNS, par)))
+            # strict: the column-count guard above already rejected short rows,
+            # so this asserts that invariant instead of quietly dropping fields
+            row = cast(RawRow, dict(zip(COLUMNS, par, strict=True)))
             out = Medicine.arow(row, line)
 
 

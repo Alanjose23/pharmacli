@@ -106,7 +106,8 @@ def report(runs: list[dict], url: str) -> str:
                    f"{p95(r['rows'], 'wall')} | {med(r['rows'], 'ttft_client')} | {r['rps']} |")
 
     out += ["", "## Where the time goes (median ms per stage)", "",
-            "| concurrency | " + " | ".join(STAGES) + " | answered |", "|---" * (len(STAGES) + 2) + "|"]
+            "| concurrency | " + " | ".join(STAGES) + " | answered |",
+            "|---" * (len(STAGES) + 2) + "|"]
     for r in runs:
         answered = sum(1 for x in r["rows"] if not x["refused"])
         out.append(f"| {r['concurrency']} | "

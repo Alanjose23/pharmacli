@@ -2,8 +2,8 @@
 import numpy as np
 import pandas as pd
 import pytest
+from conftest import row  # the shared 12-column RawRow builder
 
-from conftest import row          # the shared 12-column RawRow builder
 from pharmacli.models.medicine import Medicine
 from pharmacli.store import connect, insert
 
@@ -22,7 +22,7 @@ def db(tmp_path):
         Medicine.arow(row("00000000002", "20.00", "2026-01-07", "B", "2.00"), 4),
     ]
     assert all(isinstance(m, Medicine) for m in meds)
-    insert(conn, meds) 
+    insert(conn, meds)
     conn.close()
     return path
 

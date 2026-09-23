@@ -1,8 +1,8 @@
 import numpy as np
 import pandas as pd
 import pytest
+from conftest import row  # the shared 12-column RawRow builder
 
-from conftest import row          # the shared 12-column RawRow builder
 from pharmacli.models.medicine import Medicine
 from pharmacli.store import connect, insert
 

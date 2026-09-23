@@ -5,11 +5,10 @@ import json
 import time
 
 import pytest
-
 from conftest import RAG_CORPUS, FakeChroma, hit, ollama
 
 pytest.importorskip("fastapi")
-from fastapi.testclient import TestClient      # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
 
 ANSWER = "Metformin is contraindicated in severe renal impairment [1]. Monitor renal function [2]."
 QUESTION = {"question": "what does the metformin label say about renal impairment"}

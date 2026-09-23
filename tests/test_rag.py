@@ -3,10 +3,9 @@ import json
 
 import httpx
 import pytest
-
 from conftest import RAG_CORPUS, FakeChroma, hit, makepdf, userag
-from pharmacli import rag
 
+from pharmacli import rag
 
 # ── parse and chunk ──────────────────────────────────────────────────────────
 
@@ -42,7 +41,7 @@ def tfixedwindowsrespectbudgetandoverlap():
                  " ".join(f"x{i:03d}" for i in range(200)))
     chunks = rag.chunk_fixed(body, size=300, overlap=50)
     assert all(len(c.text) <= 300 for c in chunks)
-    for a, b in zip(chunks, chunks[1:]):
+    for a, b in zip(chunks, chunks[1:], strict=False):
         assert a.text[-50:] == b.text[:50]              # consecutive windows overlap
     assert chunks[0].page_start == 1 and chunks[-1].page_end == 2
     joined = body[0][1] + " " + body[1][1]
@@ -315,7 +314,8 @@ def tgroundedanswerstreamswithsources():
                                            " · p.4 · label 2026-01-02")
     done = evs[-1]
     assert done["type"] == "done" and done["tokens"]["prompt"] == 120
-    assert {"embed", "retrieve", "ttft", "prefill", "decode", "queue", "total"} <= set(done["timings_ms"])
+    assert ({"embed", "retrieve", "ttft", "prefill", "decode", "queue", "total"}
+            <= set(done["timings_ms"]))
     assert [r["text"] for r in done["retrieved"]] == [hit(1).text, hit(2).text]
     # the question named metformin, so retrieval was filtered to its label
     assert chroma.calls[0] == ("query", "chunks_section", 5, {"doc_id": {"$in": ["met"]}})
@@ -346,6 +346,7 @@ def tformatlineshidesungroundedanswers():
 
 def shelf(tmp_path):
     from conftest import row
+
     from pharmacli.models.medicine import Medicine
     from pharmacli.store import connect, insert, watch_cost
 

@@ -1,4 +1,4 @@
-from pharmacli.cli import (expected_price, move_odds, days_to_reprice,reorder_advice)
+from pharmacli.desk import days_to_reprice, expected_price, move_odds, reorder_advice
 
 
 def tmoveoddscomefromthepanel():
@@ -32,7 +32,7 @@ def tmoveevmatchesthepanelderivation():
     pytest = __import__("pytest")
     pd = pytest.importorskip("pandas")
     frame = pytest.importorskip("pharmacli.frame")
-    from pharmacli.cli import MOVE_EV
+    from pharmacli.desk import MOVE_EV
 
     # a two-NDC panel: one steps down every other week, one steps up
     weeks = pd.date_range("2026-01-07", periods=12, freq="7D")
@@ -60,7 +60,7 @@ def tpennyswingsdonotchangetheorder():
 
 
 def tstockbeatspricewhenyouareout():
- 
+
     r = reorder_advice(on_hand=0, monthly=900, age_days=24, price=1.0, rate_class="G")
     assert r["action"] == "order now"
     assert "stock-out" in r["why"]
@@ -87,7 +87,7 @@ def tnowaitingforamovethatisnotcoming():
 
     r = reorder_advice(on_hand=1200, monthly=1800, age_days=7, price=0.05, rate_class="G")
     assert not r["action"].startswith("wait")
-    assert r["saving"] == 0.0             
+    assert r["saving"] == 0.0
     # no saving claimed on a routine order
 
 
@@ -100,11 +100,11 @@ def tnovolumenoadvice():
 def tthecalendarrulereproduceseveryobservedrepricingfile():
     from datetime import date
 
-    from pharmacli.cli import next_reprice
+    from pharmacli.desk import next_reprice
 
     observed = ["2026-01-21", "2026-02-18", "2026-03-18", "2026-04-22",
                 "2026-05-20", "2026-06-17", "2026-07-22", "2026-08-19"]
-    for prev, nxt in zip(observed, observed[1:]):
+    for prev, nxt in zip(observed, observed[1:], strict=False):
         assert next_reprice(date.fromisoformat(prev)).isoformat() == nxt, prev
     # and it rolls into the next year rather than repeating December
     assert next_reprice(date(2026, 12, 31)) == date(2027, 1, 20)
@@ -113,7 +113,7 @@ def tthecalendarrulereproduceseveryobservedrepricingfile():
 def tnextrepriceneverreturnsthedateyougaveit():
     from datetime import date, timedelta
 
-    from pharmacli.cli import next_reprice
+    from pharmacli.desk import next_reprice
 
     d = date(2026, 1, 1)
     for _ in range(400):                      # walk a year of days

@@ -9,7 +9,7 @@ GOOD = "STRIBILD TABLET,61958120101,150.40902,01/01/2026,EA,C/I,N,4,B,0.23432,05
 
 
 def row(line: str) -> RawRow:
-    return dict(zip(COLUMNS, line.split(","))) 
+    return dict(zip(COLUMNS, line.split(","), strict=True))
 
  # each rejection has its own reason
 def tparseprice():
@@ -56,7 +56,7 @@ def tmissgenpprice():
 def troundtrips():
     med = Medicine.arow(row(GOOD), 2)
     assert isinstance(med, Medicine)
-    again = Medicine.arow(dict(zip(COLUMNS, med.torow())), 2)
+    again = Medicine.arow(dict(zip(COLUMNS, med.torow(), strict=True)), 2)
     assert again == med
 
 
@@ -113,11 +113,13 @@ def twatchroundtrip(tmp_path):
 
 
 def twatchsurvivesreconnect(tmp_path):
- 
+
     from pharmacli.store import watch_add, watched
 
     path = str(tmp_path / "w.db")
-    conn = connect(path); watch_add(conn, ["00378351501"]); conn.close()
+    conn = connect(path)
+    watch_add(conn, ["00378351501"])
+    conn.close()
     again = connect(path)
     assert watched(again) == ["00378351501"]
     again.close()

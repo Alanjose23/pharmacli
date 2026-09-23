@@ -35,6 +35,7 @@ def tallthreesegmentationsaretried():
 # cmdlookup itself calls openFDA, and a test must not go to the network.
 def thistoryreturnseveryweekoldestfirst(tmp_path):
     from conftest import row
+
     from pharmacli.models.medicine import Medicine
     from pharmacli.store import connect, insert
 
@@ -54,6 +55,7 @@ def thistoryreturnseveryweekoldestfirst(tmp_path):
 
 def thistorypadsthendclikeeverythingelse(tmp_path):
     from conftest import row
+
     from pharmacli.models.medicine import Medicine
     from pharmacli.store import connect, insert
 
@@ -67,7 +69,7 @@ def thistorypadsthendclikeeverythingelse(tmp_path):
 
 
 def tsparklinescalesandneverliesaboutflat():
-    from pharmacli.cli import BLOCKS, _sparkline
+    from pharmacli.desk import BLOCKS, _sparkline
 
     rising = _sparkline([1.0, 2.0, 3.0, 4.0])
     assert rising[0] == BLOCKS[0] and rising[-1] == BLOCKS[-1]

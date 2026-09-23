@@ -73,7 +73,8 @@ def trefreshpicksupnewerlabelsandchangeddocuments(tmp_path):
     with client({"s1": label("s1", "ALPHA", ["11111-1111-01"], version="6")}) as c:
         changed = docs.refresh(corpus, c, docs_dir=str(tmp_path))
     assert changed == ["s1", "law"]
-    assert corpus["inserts"][0]["version"] == 6 and corpus["inserts"][0]["label_date"] == "2026-08-12"
+    assert corpus["inserts"][0]["version"] == 6
+    assert corpus["inserts"][0]["label_date"] == "2026-08-12"
     assert corpus["business"][0]["sha256"] == hashlib.sha256(PDF).hexdigest()
 
 
@@ -134,4 +135,5 @@ def trefreshkeepsthepreviouslabelandrestoresonfailure(tmp_path):
     corpus["inserts"][0]["version"] = 5
     with client(newer, pdf=b"<html>down</html>") as c:
         assert docs.refresh(corpus, c, docs_dir=str(tmp_path)) == []
-    assert (tmp_path / "s1.pdf").read_bytes() == PDF                 # a failed download keeps the label
+    # a failed download keeps the label
+    assert (tmp_path / "s1.pdf").read_bytes() == PDF

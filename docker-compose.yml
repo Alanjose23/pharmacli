@@ -7,6 +7,10 @@ services:
     environment:
       # service names, not 127.0.0.1: inside the network chroma listens on its
       # own 8000, not the 8001 published to the host
+      # the committed demo fixture, so /predict answers out of the box. Override
+      # both in .env to serve the real panel and the promoted model.
+      PHARMACLI_DB: ${PHARMACLI_DB:-data/demo.db}
+      PHARMACLI_MODEL: ${PHARMACLI_MODEL:-models/demo-mover.joblib}
       PHARMACLI_CHROMA_URL: http://chroma:8000
       PHARMACLI_OLLAMA_URL: http://ollama:11434
       PHARMACLI_LLM: ${PHARMACLI_LLM:-qwen2.5:3b-instruct}
@@ -17,9 +21,10 @@ services:
       # the PDFs `docs fetch` downloads, kept on the host so a rebuild does not
       # re-download 56 files
       - ./data:/app/data
-      # /predict needs these two. Both are gitignored, so a clean checkout has
-      # neither and the API serves documents only; uncomment once `sweep` has
-      # written a model and `fetch` a panel.
+      # the REAL panel and model, for predictions that mean something. Both are
+      # gitignored, so a clean checkout has neither and /predict answers from
+      # the demo fixture instead; uncomment once `fetch` and `sweep` have run,
+      # and set PHARMACLI_DB / PHARMACLI_MODEL in .env to match.
       # - ./pharmacli.db:/app/pharmacli.db:ro
       # - ./models:/app/models:ro
     depends_on:

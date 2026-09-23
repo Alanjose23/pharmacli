@@ -31,9 +31,16 @@ def tsplitsaredisjointandordered():
 
 def tpanelfingerprintignorestheshelf(tmp_path):
     from conftest import row
+
     from pharmacli.models.medicine import Medicine
-    from pharmacli.store import (connect, insert, panel_fingerprint,
-                                 watch_add, watch_cost, watch_remove)
+    from pharmacli.store import (
+        connect,
+        insert,
+        panel_fingerprint,
+        watch_add,
+        watch_cost,
+        watch_remove,
+    )
 
     conn = connect(str(tmp_path / "f.db"))
     try:

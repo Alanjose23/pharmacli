@@ -2,8 +2,8 @@ from datetime import date
 
 import httpx
 import pytest
-
 from conftest import RAG_CORPUS, FakeChroma, hit, makepdf, userag
+
 from pharmacli import safety
 
 RECALLS = [
@@ -87,7 +87,8 @@ def thandouttakesthereal17notthecontentsline(tmp_path):
 
 def tinteractionsloopspairsandlistsunknowns():
     async def go(r):
-        return [ln async for ln in safety.interactions(r, ["metformin", "zituvimet", "unobtainium"])]
+        return [ln async for ln
+                in safety.interactions(r, ["metformin", "zituvimet", "unobtainium"])]
 
     lines = userag(go, FakeChroma([hit(1)]), reply="Monitor blood glucose [1].")
     assert lines[0] == "not checked: unobtainium (no label in the corpus)"

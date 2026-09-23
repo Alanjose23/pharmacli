@@ -2,13 +2,14 @@
 
 from dataclasses import dataclass
 from datetime import date, datetime
+
 # for price
 from decimal import Decimal, InvalidOperation
 from typing import Final
 
 from pharmacli.models.rows import RawRow, SkippedRow
 
-# the date layouts from csv and api 
+# the date layouts from csv and api
 DATES: Final[tuple[str,...]] = ("%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y")
 
 OTCVALS: Final[frozenset[str]] = frozenset({"y","yes","true", "1", "otc"})
@@ -108,7 +109,8 @@ class Medicine:
         genprice, _ = parseprice(genrow)
         if genprice is not None:
             gendate = parsedate(row["Corresponding Generic Drug Effective Date"])
-            generic = Price(unitprice=genprice, unit=row["Pricing Unit"].strip(),effective_date=gendate)
+            generic = Price(unitprice=genprice, unit=row["Pricing Unit"].strip(),
+                            effective_date=gendate)
         else:
             generic = None
 

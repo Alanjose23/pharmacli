@@ -2,11 +2,11 @@ import logging
 
 import numpy as np
 
-log = logging.getLogger(__name__)
-
 # Same seed as the sklearn side, for the same reason: a tracked run has to be
 # replayable. See model.SEED.
 from pharmacli.model import SEED
+
+log = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TASK 1 -- backprop by hand, checked against autograd
@@ -387,7 +387,8 @@ def xray(dataset: str = "pneumoniamnist", epochs: int = 12, batch: int = 128,
     # A single run of each "showed" weighting making things worse. On a
     # 624-image test set one run is an anecdote.
     counts = np.bincount(ytr, minlength=n_classes).astype(np.float32)
-    weight = (counts.sum() / (n_classes * np.maximum(counts, 1))) if balance else np.ones(n_classes, np.float32)
+    weight = ((counts.sum() / (n_classes * np.maximum(counts, 1))) if balance
+              else np.ones(n_classes, np.float32))
     lossfn = tnn.CrossEntropyLoss(weight=torch.tensor(weight))
     log.info("class counts %s, loss weights %s", counts.astype(int).tolist(),
              np.round(weight, 3).tolist())
@@ -437,7 +438,9 @@ def xray(dataset: str = "pneumoniamnist", epochs: int = 12, batch: int = 128,
     # Where it FAILS, per class -- the week asks for this explicitly, and an
     # accuracy number alone hides which direction the errors run.
     confusion = np.zeros((n_classes, n_classes), dtype=int)
-    for t, p in zip(yte, pred):
+    # strict: a pred shorter than yte would fill a confusion matrix that looks
+    # fine and counts fewer rows than were scored
+    for t, p in zip(yte, pred, strict=True):
         confusion[t, p] += 1
     per_class = {int(c): {"n": int(confusion[c].sum()),
                           "recall": float(confusion[c, c] / max(confusion[c].sum(), 1))}

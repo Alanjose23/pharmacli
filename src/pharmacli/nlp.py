@@ -49,14 +49,19 @@ def split(texts: list[str], y: np.ndarray, test_frac: float = 0.25):
     held = set(uniq[:max(1, int(len(uniq) * test_frac))])
     te = np.array([h in held for h in heads])
     return (
-        [t for t, m in zip(texts, te) if not m], y[~te],
-        [t for t, m in zip(texts, te) if m], y[te],
+        [t for t, m in zip(texts, te, strict=True) if not m], y[~te],
+        [t for t, m in zip(texts, te, strict=True) if m], y[te],
     )
 
 
 def scores(y_true, pred) -> dict:
-    from sklearn.metrics import (accuracy_score, balanced_accuracy_score,
-                                 f1_score, precision_score, recall_score)
+    from sklearn.metrics import (
+        accuracy_score,
+        balanced_accuracy_score,
+        f1_score,
+        precision_score,
+        recall_score,
+    )
     return {
         "accuracy": accuracy_score(y_true, pred),
         "balanced_accuracy": balanced_accuracy_score(y_true, pred),
