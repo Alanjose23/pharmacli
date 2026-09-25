@@ -1,5 +1,6 @@
 import json
 import logging
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -69,11 +70,8 @@ def build(cfg: dict):
 def data_md5(db: str | None = None) -> str:
     from pharmacli.store import connect, panel_fingerprint
 
-    conn = connect(db or load_config().db)
-    try:
+    with closing(connect(db or load_config().db)) as conn:
         return panel_fingerprint(conn)
-    finally:
-        conn.close()
 
 
 # ── the promoted artifact ────────────────────────────────────────────────────

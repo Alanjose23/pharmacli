@@ -18,10 +18,13 @@ GOOD = "00000000001"      # steps +10% every other week -> the movers
 FLAT = "00000000002"      # never moves -> the negatives
 
 
-@pytest.fixture
-def client(tmp_path, monkeypatch):
+# module-scoped: training the pipeline is the slow part, and every test here
+# only reads from the app
+@pytest.fixture(scope="module")
+def client(tmp_path_factory):
     import joblib
 
+    tmp_path = tmp_path_factory.mktemp("serve")
     db = str(tmp_path / "p.db")
     conn = connect(db)
     weeks = pd.date_range("2026-01-07", periods=20, freq="7D").strftime("%Y-%m-%d")
@@ -45,15 +48,16 @@ def client(tmp_path, monkeypatch):
                                    "test_pr_auc": 0.5, "params": {}})
     path.with_suffix(".json").write_text(json.dumps(card))
 
-    monkeypatch.setenv("PHARMACLI_DB", db)
-    monkeypatch.setenv("PHARMACLI_MODEL", str(path))
-    monkeypatch.setenv("PHARMACLI_JWT_SECRET", "unit-test-secret")
     from pharmacli import serve
-    with TestClient(serve.app) as c:      # TestClient runs lifespan
-        # week 10: /predict is behind a bearer token. tests/test_api.py is
-        # where the token itself is tested; here it is just the way in
-        c.headers["Authorization"] = f"Bearer {serve.issue('test')}"
-        yield c
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("PHARMACLI_DB", db)
+        mp.setenv("PHARMACLI_MODEL", str(path))
+        mp.setenv("PHARMACLI_JWT_SECRET", "unit-test-secret")
+        with TestClient(serve.app) as c:      # TestClient runs lifespan
+            # week 10: /predict is behind a bearer token. tests/test_api.py is
+            # where the token itself is tested; here it is just the way in
+            c.headers["Authorization"] = f"Bearer {serve.issue('test')}"
+            yield c
 
 
 def thealthreportstheversionitisserving(client):

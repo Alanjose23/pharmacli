@@ -4,6 +4,7 @@
 
 import difflib
 import re
+from contextlib import closing
 from datetime import date, timedelta
 
 import httpx
@@ -96,11 +97,8 @@ def shelf_recalls(db: str | None = None, days: int = 90,
     if shelf is not None:                      # an uploaded CSV needs no database
         on_hand = {n: oh for n, (oh, _) in shelf[1].items()}
     else:
-        conn = connect(db or load().db)
-        try:
+        with closing(connect(db or load().db)) as conn:
             on_hand = {n: oh for n, (oh, _) in stock(conn).items()}
-        finally:
-            conn.close()
     if not on_hand:
         return ["no NDCs on watch. pharmacli watch import data/pharmacy_inventory.csv"]
     with httpx.Client(timeout=load().timeout) as client:

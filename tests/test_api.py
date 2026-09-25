@@ -130,3 +130,30 @@ def tmetricscountrequestsandnamethestages(api):
 def tanincomingrequestidiskept(api):
     r = api.get("/health", headers={"X-Request-ID": "trace-me-42"})
     assert r.headers["x-request-id"] == "trace-me-42"
+
+
+def tanonobjectheaderis401notacrash(api):
+    # unsigned garbage used to reach .get() on a JSON list before the signature
+    # check, and came back as a 500
+    from pharmacli import serve
+
+    junk = f"{serve._b64(b'[1]')}.{serve._b64(b'{}')}.x"
+    assert api.post("/ask", json=QUESTION,
+                    headers={"Authorization": f"Bearer {junk}"}).status_code == 401
+
+
+def tachunkeduploadpastthecapisrefused(api, monkeypatch):
+    # no content-length on a streamed body, so the cap must count as it reads
+    from pharmacli import serve
+
+    monkeypatch.setattr(serve, "MAX_UPLOAD", 10)
+    b = api.post("/chat/upload", content=iter([b"00000000001,1.0\n"] * 3)).json()
+    assert "larger than" in b["error"]
+
+
+def tadocidcannotclimboutofthedocsfolder():
+    from pharmacli import docs
+
+    with pytest.raises(ValueError):
+        docs.pdf_path("../../etc/passwd")
+    assert docs.pdf_path("ny-phl-280-a").name == "ny-phl-280-a.pdf"

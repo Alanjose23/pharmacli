@@ -5,6 +5,7 @@ import bisect
 import collections
 import csv
 import random
+from contextlib import closing
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -34,15 +35,12 @@ def _write_csv(path: str, header: tuple, rows) -> None:
 def sample(db: str, claims_path: str, payers_path: str, days: int = 30, seed: int = 7) -> int:
     # ponytail: synthetic claims so the check can be built and demoed before a
     # real claims export exists; swap in the export, keep the columns
-    conn = connect(db)
-    try:
+    with closing(connect(db)) as conn:
         week = newest_week(conn)
         rows = conn.execute(
             "SELECT w.ndc, w.monthly, MAX(CAST(n.unit_price AS REAL)) FROM watch w"
             " JOIN nadac n ON n.ndc = w.ndc AND n.as_of_date = ?"
             " WHERE w.monthly > 0 GROUP BY w.ndc ORDER BY w.ndc", (week,)).fetchall()
-    finally:
-        conn.close()
     # one generator, fixed seed, dates counted back from the panel's own newest
     # file: the same database always yields the same bytes
     rng = random.Random(seed)
@@ -89,11 +87,8 @@ def read_payers(path: str | None) -> dict[str, float]:
 
 def check(db: str, claims: list[dict], fees: dict[str, float]) -> dict:
     default_fee = load().dispensing_fee
-    conn = connect(db)
-    try:
+    with closing(connect(db)) as conn:
         cost = costs(conn)
-    finally:
-        conn.close()
     prices: dict[str, list[tuple[str, float]]] = {}
     priced, unpriced = [], 0
     for c in claims:
@@ -165,8 +160,7 @@ def generics(db: str, shelf: tuple[dict, dict] | None = None) -> list[tuple] | s
     cheaper = (" FROM nadac n WHERE n.as_of_date = ? AND n.rate_class IN ('B', 'B-ANDA')"
                " AND n.generic_price != '' AND CAST(n.generic_price AS REAL) > 0"
                " AND CAST(n.unit_price AS REAL) > CAST(n.generic_price AS REAL)")
-    conn = connect(db)
-    try:
+    with closing(connect(db)) as conn:
         week = newest_week(conn)
         if week is None:
             return "no NADAC data. pharmacli fetch"
@@ -188,8 +182,6 @@ def generics(db: str, shelf: tuple[dict, dict] | None = None) -> list[tuple] | s
                 " CAST(n.generic_price AS REAL), w.monthly"
                 " FROM nadac n JOIN watch w ON w.ndc = n.ndc"
                 + cheaper[len(" FROM nadac n"):], (week,)).fetchall()
-    finally:
-        conn.close()
     # dollars a month where volume is recorded, the per-unit gap otherwise
     return sorted(rows, key=lambda r: ((r[2] - r[3]) * (r[4] or 0), r[2] - r[3]), reverse=True)
 

@@ -1,4 +1,5 @@
 import logging
+from contextlib import closing
 
 import numpy as np
 
@@ -17,14 +18,11 @@ BRAND = ("B", "B-ANDA", "B-BIO")
 def corpus(db: str | None = None) -> tuple[list[str], np.ndarray]:
     from pharmacli.store import connect
 
-    conn = connect(db or _db())
-    try:
+    with closing(connect(db or _db())) as conn:
         rows = conn.execute(
             "SELECT description, rate_class, COUNT(*) FROM nadac"
             " WHERE description != '' AND rate_class != ''"
             " GROUP BY description, rate_class").fetchall()
-    finally:
-        conn.close()
     # a description can carry more than one rate_class across labellers; take
     # the one it appears under most, so the label is the drug's usual class
     best: dict[str, tuple[int, str]] = {}

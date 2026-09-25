@@ -85,7 +85,7 @@ const api = (path, opts = {}) => fetch('/chat' + path, {...opts,
 // QUESTIONS shows up here with no edit to this page
 api('/prompts').then(r => r.json()).then(ls => {
   document.getElementById('pills').innerHTML = ls.slice(0, 6)
-    .map(l => `<button class="pill">${l}</button>`).join('');
+    .map(l => `<button class="pill">${esc(l)}</button>`).join('');
   document.querySelectorAll('.pill').forEach(
     b => b.onclick = () => send(b.textContent));
 });
@@ -97,7 +97,8 @@ function add(cls, html) {
   log.appendChild(d); log.scrollTop = log.scrollHeight;
   return d;
 }
-const esc = s => s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const esc = s => String(s).replace(/[&<>"']/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 async function send(q) {
   if (!q.trim()) return;

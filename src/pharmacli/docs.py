@@ -5,7 +5,9 @@
 import hashlib
 import json
 import logging
+import re
 import time
+from contextlib import closing
 from pathlib import Path
 
 import httpx
@@ -65,6 +67,9 @@ def digest(corpus: dict) -> str:
 
 
 def pdf_path(doc_id: str, docs_dir: str = DOCS_DIR) -> Path:
+    # doc_id comes from corpus.json and openFDA's set_id; neither may climb out
+    if not re.fullmatch(r"[A-Za-z0-9][\w-]*", doc_id):
+        raise ValueError(f"unsafe doc_id: {doc_id!r}")
     return Path(docs_dir) / f"{doc_id}.pdf"
 
 
@@ -113,15 +118,12 @@ def label_for_ndc(ndc: str, client: httpx.Client) -> dict | None:
 def from_shelf(db: str, n: int, client: httpx.Client, docs_dir: str = DOCS_DIR) -> dict:
     from pharmacli.store import connect
 
-    conn = connect(db)
-    try:
+    with closing(connect(db)) as conn:
         # spend, not count: the labels worth having first are the drugs the
         # pharmacy puts the most money through
         ranked = [ndc for (ndc,) in conn.execute(
             "SELECT ndc FROM watch WHERE cost IS NOT NULL AND monthly IS NOT NULL"
             " ORDER BY cost * monthly DESC")]
-    finally:
-        conn.close()
 
     inserts: list[dict] = []
     seen: set[str] = set()

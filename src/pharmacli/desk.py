@@ -5,6 +5,7 @@
 #
 # Nothing here imports cli or parser: the dependency runs one way.
 
+from contextlib import closing
 from datetime import date as _date
 from datetime import timedelta
 from typing import Final
@@ -234,8 +235,7 @@ def worklists(db: str, within: int = 14, dead_days: int = 90,
               shelf: tuple[dict, dict] | None = None) -> dict:
     from pharmacli.store import connect, costs, last_priced, newest_week, stock
 
-    conn = connect(db)
-    try:
+    with closing(connect(db)) as conn:
         week = as_of or newest_week(conn)
         if week is None:
             return {"error": "no NADAC data. pharmacli fetch"}
@@ -256,8 +256,6 @@ def worklists(db: str, within: int = 14, dead_days: int = 90,
             " rate_class, CAST(julianday(as_of_date)-julianday(effective_date) AS INT)"
             f" FROM nadac WHERE as_of_date = ? AND ndc IN ({holes})",
             [week, *mine]).fetchall()
-    finally:
-        conn.close()
 
     under, buy, dead = [], [], []
     for ndc, desc, nadac, unit, rc, age in rows:

@@ -6,6 +6,7 @@ import pathlib
 import re
 import sys
 from collections.abc import Callable
+from contextlib import closing
 
 # claims.py imports nothing heavier than store and enrich, so no lazy import
 from pharmacli.claims import generic_savings
@@ -114,12 +115,9 @@ def next_repricing(db=None) -> list[str]:
 def shelf_summary(db=None, shelf=None) -> list[str]:
     from pharmacli.store import connect, costs, newest_week, stock
 
-    conn = connect(db or load().db)
-    try:
+    with closing(connect(db or load().db)) as conn:
         week = newest_week(conn)
         mine, qty = shelf if shelf else (costs(conn), stock(conn))
-    finally:
-        conn.close()
     vol = sum(1 for v in qty.values() if v[1])
     return [f"{len(mine):,} positions with a recorded cost",
             f"{vol:,} of them have a dispensing volume on file",
@@ -136,14 +134,11 @@ def _drug(db, ndc: str):
     if not d:
         return None
     key = ndc.strip().zfill(11)
-    conn = connect(db or load().db)
-    try:
+    with closing(connect(db or load().db)) as conn:
         # one row by primary key -- was store.costs() + store.stock(), which read
         # the whole shelf to answer for one drug (~182s to write 5,000 drugs)
         row = conn.execute("SELECT cost, on_hand, monthly FROM watch WHERE ndc = ?",
                            (key,)).fetchone()
-    finally:
-        conn.close()
     cost, qty = (row[0], (row[1], row[2])) if row else (None, (None, None))
     age = (_d.fromisoformat(d["as_of_date"])
            - _d.fromisoformat(d["effective_date"])).days
@@ -244,16 +239,13 @@ def keyword_search(texts: list[str], q: str, k: int = 5) -> list[str]:
 def find_drug(db=None, phrase="") -> list[str]:
     from pharmacli.store import connect
 
-    conn = connect(db or load().db)
-    try:
+    with closing(connect(db or load().db)) as conn:
         # description -> its most recent NDC. nlp.corpus() is DISTINCT on
         # description and returns no NDC, so a phrase would resolve to a name
         # with nothing to look up.
         rows = conn.execute(
             "SELECT description, ndc, MAX(as_of_date) FROM nadac"
             " WHERE description != '' GROUP BY description").fetchall()
-    finally:
-        conn.close()
     texts = [r[0] for r in rows]
     ndcs = {r[0]: r[1] for r in rows}
     try:
@@ -304,14 +296,11 @@ def shelf_changes(db=None, shelf=None) -> list[str]:
     if not shelf:
         return ["attach an inventory CSV first, or run: pharmacli check FILE.csv"]
     mine, qty = shelf
-    conn = connect(db or load().db)
-    try:
+    with closing(connect(db or load().db)) as conn:
         saved_cost, saved_qty = costs(conn), stock(conn)
         week = newest_week(conn)
         named = dict(conn.execute("SELECT ndc, description FROM nadac WHERE as_of_date = ?",
                                   (week,))) if week else {}
-    finally:
-        conn.close()
 
     def name(ndc: str) -> str:
         return str(named.get(ndc, "(not in the NADAC file)"))[:34]
@@ -355,11 +344,8 @@ def suggestions(db=None, shelf=None) -> list[dict]:
     w = _worklists(db, shelf=shelf)
     if "error" in w:
         return []
-    conn = connect(db or load().db)
-    try:
+    with closing(connect(db or load().db)) as conn:
         saved = len(costs(conn))
-    finally:
-        conn.close()
     cheaper = generics(db or load().db, shelf)
     cheaper = [] if isinstance(cheaper, str) else cheaper
 
@@ -440,11 +426,8 @@ def write_drugs(path: str, db=None) -> int:
     from pharmacli.output import open_output
     from pharmacli.store import connect, watched
 
-    conn = connect(db or load().db)
-    try:
+    with closing(connect(db or load().db)) as conn:
         ndcs = watched(conn)
-    finally:
-        conn.close()
     fee = load().dispensing_fee
     log.info("writing %d drugs to %s", len(ndcs), path)
     with open_output(pathlib.Path(path)) as fh:

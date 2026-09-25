@@ -41,13 +41,10 @@ def tkeywordsearchranksprefixfirst():
 
 
 def tcorpuslabelsarebinaryandbalancedish():
-    pytest.importorskip("sqlite3")
-    # uses whatever db is configured; skip when there is no panel to read
-    try:
-        texts, y = nlp.corpus()
-    except Exception:
-        pytest.skip("no panel available")
-    if not texts:
-        pytest.skip("empty panel")
+    # the committed demo panel: the same in CI as here, and not the 165MB one
+    from pathlib import Path
+
+    texts, y = nlp.corpus(str(Path(__file__).resolve().parent.parent / "data" / "demo.db"))
+    assert texts
     assert set(np.unique(y)) <= {0, 1}
     assert len(texts) == len(set(texts)), "descriptions must be de-duplicated"

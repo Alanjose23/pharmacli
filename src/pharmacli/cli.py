@@ -6,6 +6,7 @@ import os
 import sys
 import tempfile
 import time
+from contextlib import closing
 from pathlib import Path
 from typing import Final
 
@@ -98,8 +99,7 @@ def cmdfetch(args: argparse.Namespace) -> int:
                 pass
         log.info("removed %s", db)
 
-    conn = connect(db)
-    try:
+    with closing(connect(db)) as conn:
         # already stored items are skipped
         pages = pending_offsets(conn, args.limit, PAGE_SIZE)
         if not pages:
@@ -131,8 +131,6 @@ def cmdfetch(args: argparse.Namespace) -> int:
         log.info("%d records in %.2fs (%.0f rec/s), %d new rows, %d total",
                  len(records), elapsed,
                  len(records) / elapsed if elapsed else 0, stored, count(conn))
-    finally:
-        conn.close()
     return EXIT_OK
 
 
@@ -317,8 +315,7 @@ def _import_costs(conn, path: str) -> int:
 def cmdwatch(args: argparse.Namespace) -> int:
     from pharmacli.store import connect, last_priced, newest_week, watch_add, watch_remove, watched
 
-    conn = connect(args.db or load().db)
-    try:
+    with closing(connect(args.db or load().db)) as conn:
         if args.action == "add":
             print(f"{watch_add(conn, args.ndc, args.cost)} added "
                   f"({len(watched(conn))} on watch)")
@@ -362,8 +359,6 @@ def cmdwatch(args: argparse.Namespace) -> int:
             print(f"  ... {len(stock) - 20} more")
         if stale:
             print(f"\n{len(stale)} not in the newest file (delisted or never priced)")
-    finally:
-        conn.close()
     return EXIT_OK
 
 
@@ -556,11 +551,8 @@ def cmdforecast(args: argparse.Namespace) -> int:
 
     config = load()
     db = args.db or config.db
-    conn = connect(db)
-    try:
+    with closing(connect(db)) as conn:
         stock, mine = watched(conn), watch_costs(conn)
-    finally:
-        conn.close()
     if not stock:
         log.error("no NDCs on watch. add some: pharmacli watch add <NDC> ...")
         return EXIT_NOROWS
@@ -632,8 +624,7 @@ def cmdmargin(args: argparse.Namespace) -> int:
     from pharmacli.store import connect, costs, newest_week, stock
 
     config = load()
-    conn = connect(args.db or config.db)
-    try:
+    with closing(connect(args.db or config.db)) as conn:
         mine = costs(conn)
         qty = stock(conn)
         if not mine:
@@ -649,8 +640,6 @@ def cmdmargin(args: argparse.Namespace) -> int:
             " FROM nadac WHERE as_of_date = ?"
             f" AND ndc IN ({holes})",
             [week, *mine]).fetchall()
-    finally:
-        conn.close()
 
     fee = config.dispensing_fee
 
@@ -736,11 +725,8 @@ def cmdreorder(args: argparse.Namespace) -> int:
         log.error("%s", w["error"])
         return EXIT_BADIN if args.as_of else EXIT_NOROWS
 
-    conn = connect(db)
-    try:
+    with closing(connect(db)) as conn:
         packs = packages(conn)
-    finally:
-        conn.close()
 
     plan, week = list(w["buy"]), w["week"]
     if not plan:

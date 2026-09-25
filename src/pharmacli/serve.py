@@ -17,11 +17,11 @@ import os
 import secrets
 import time
 import uuid
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager, closing
 from pathlib import Path
 from typing import Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
@@ -115,15 +115,18 @@ def issue(sub: str, ttl: int = TTL) -> str:
 def verify(token: str) -> dict:
     try:
         head, payload, sig = token.split(".")
-        if json.loads(_unb64(head)).get("alg") != ALG["alg"]:
-            raise ValueError("unsupported algorithm")
+        # signature first: nothing attacker-shaped is parsed before it verifies
         want = hmac.new(_secret().encode(), f"{head}.{payload}".encode(), hashlib.sha256).digest()
         if not hmac.compare_digest(want, _unb64(sig)):
             raise ValueError("bad signature")
+        if json.loads(_unb64(head)).get("alg") != ALG["alg"]:
+            raise ValueError("unsupported algorithm")
         claims = json.loads(_unb64(payload))
-    except (ValueError, KeyError, TypeError, binascii.Error) as exc:
+        expired = float(claims.get("exp", 0)) < time.time()
+    # AttributeError: a header or payload that is valid JSON but not an object
+    except (ValueError, KeyError, TypeError, AttributeError, binascii.Error) as exc:
         raise HTTPException(401, f"invalid token: {exc}") from exc
-    if float(claims.get("exp", 0)) < time.time():
+    if expired:
         raise HTTPException(401, "token expired")
     return claims
 
@@ -211,7 +214,8 @@ app = FastAPI(title="pharmacli", version="10.0", lifespan=lifespan,
 # ── one JSON line per request ────────────────────────────────────────────────
 @app.middleware("http")
 async def observe(request: Request, call_next):
-    rid = request.headers.get("x-request-id") or uuid.uuid4().hex[:12]
+    # capped: a caller-supplied id is echoed into every log line and header
+    rid = request.headers.get("x-request-id", "")[:64] or uuid.uuid4().hex[:12]
     REQ_ID.set(rid)
     t = time.perf_counter()
     try:
@@ -435,7 +439,7 @@ def chat_prompts(who: str = Depends(caller)):
 
 
 @app.get("/chat/ask")
-def chat_ask(q: str, who: str = Depends(caller)):
+def chat_ask(q: str = Query(..., max_length=500), who: str = Depends(caller)):
     from pharmacli import ask
 
     # match() once, here, only to strip the label's own words out of the phrase
@@ -458,15 +462,26 @@ async def chat_upload(request: Request, who: str = Depends(caller)):
     from pharmacli import ask
     from pharmacli.cli import read_inventory
 
-    name = request.headers.get("x-filename") or "inventory.csv"
+    name = (request.headers.get("x-filename") or "inventory.csv")[:200]
     empty = {"name": name, "lines": 0, "skipped": 0, "reasons": [], "suggest": []}
+    too_big = empty | {"error": f"file is larger than {MAX_UPLOAD // 2**20} MB"}
     # the length header first, so an oversized file is refused before it is read
-    if int(request.headers.get("content-length") or 0) > MAX_UPLOAD:
-        return empty | {"error": f"file is larger than {MAX_UPLOAD // 2**20} MB"}
+    if not (request.headers.get("content-length") or "0").isdigit() \
+            or int(request.headers.get("content-length") or 0) > MAX_UPLOAD:
+        return too_big
 
+    # counted as it streams too: a chunked body has no content-length to check
+    size = 0
     with tempfile.NamedTemporaryFile("wb", suffix=".csv", delete=False) as fh:
-        fh.write(await request.body())
         path = fh.name
+        async for chunk in request.stream():
+            size += len(chunk)
+            if size > MAX_UPLOAD:
+                break
+            fh.write(chunk)
+    if size > MAX_UPLOAD:
+        os.remove(path)
+        return too_big
     try:
         rows, skipped = read_inventory(path)
     except OSError as exc:
@@ -492,11 +507,8 @@ def chat_save(who: str = Depends(caller)):
     held = UPLOAD.get("held")
     if not held:
         return {"error": "nothing attached"}
-    conn = connect(load_config().db)
-    try:
+    with closing(connect(load_config().db)) as conn:
         changed = watch_cost(conn, held["rows"])
-    finally:
-        conn.close()
     UPLOAD.pop("held")          # the shelf holds it now; answer from there
     return {"saved": len(held["rows"]), "changed": changed}
 
