@@ -8,6 +8,8 @@ mlruns
 notebooks
 build
 *.db
+# named on its own line too: patient rows must never be baked into a layer
+patients.db
 drugs.csv
 .env
 **/__pycache__

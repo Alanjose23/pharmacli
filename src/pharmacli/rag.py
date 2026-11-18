@@ -86,11 +86,13 @@ def heading(line: str) -> str | None:
     return None
 
 
-def _page_at(starts: list[tuple[int, int]], offset: int) -> int:
+def page_at(starts: list[tuple[int, int]], offset: int) -> int:
     return starts[bisect.bisect_right(starts, offset, key=lambda s: s[0]) - 1][1]
 
 
-def chunk_fixed(lines: list[Line], size: int = SIZE, overlap: int = OVERLAP) -> list[Chunk]:
+def join(lines: list[Line]) -> tuple[str, list[tuple[int, int]]]:
+    # the lines as one string, and where each began in it as (offset, page), so
+    # any span of the string can be cited to its page with page_at
     text, starts = "", []
     for page, ln in lines:
         # a line ending in a hyphen continues on the next one. Keep the hyphen:
@@ -99,10 +101,15 @@ def chunk_fixed(lines: list[Line], size: int = SIZE, overlap: int = OVERLAP) -> 
         sep = "" if not text or text.endswith("-") else " "
         starts.append((len(text) + len(sep), page))
         text += sep + ln
+    return text, starts
+
+
+def chunk_fixed(lines: list[Line], size: int = SIZE, overlap: int = OVERLAP) -> list[Chunk]:
+    text, starts = join(lines)
     if not text:
         return []
-    return [Chunk(text[i:i + size], "", _page_at(starts, i),
-                  _page_at(starts, min(i + size, len(text)) - 1))
+    return [Chunk(text[i:i + size], "", page_at(starts, i),
+                  page_at(starts, min(i + size, len(text)) - 1))
             for i in range(0, max(len(text) - overlap, 1), size - overlap)]
 
 

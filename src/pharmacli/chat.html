@@ -1,76 +1,86 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>pharmacli</title>
+<html lang="en"><head><meta charset="utf-8"><title>PharmaCLI chat</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- every colour comes from the tokens in this file; the rules below are layout -->
+<link rel="stylesheet" href="/static/theme.css">
 <style>
-*{box-sizing:border-box}
-body{margin:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-     color:#1a1a1a;background:#fafafa;display:flex;justify-content:center}
-#app{width:100%;max-width:920px;background:#fff;border:1px solid #e6e6e6;
-     min-height:100vh;display:flex;flex-direction:column}
+body{display:flex;justify-content:center}
+#app{width:100%;max-width:920px;min-height:100vh;display:flex;flex-direction:column}
+header{padding:16px 24px 0}
 #log{flex:1;overflow-y:auto;padding:24px}
 /* the empty state: centred, and the only thing on screen until you ask */
 #empty{height:100%;display:flex;flex-direction:column;align-items:center;
        justify-content:center;text-align:center;padding:24px}
-h1{font-size:19px;font-weight:600;margin:0 0 8px}
-.sub{color:#8a8a8a;max-width:400px;margin:0 0 28px}
-.try{color:#8a8a8a;font-size:13px;margin-bottom:12px}
-#pills{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:620px}
-.pill{background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:9px 14px;
-      cursor:pointer;font:inherit;color:#1a1a1a}
-.pill:hover{border-color:#b8b8b8;background:#fafafa}
-/* answers are column-aligned ASCII -- monospace or the tables break */
+.sub{color:var(--ink-muted);max-width:420px;margin:0}
+/* every question, one click away for the whole conversation */
+#menu{padding:0 24px}
+#menu summary{cursor:pointer;color:var(--ink-muted);font-size:.875rem;padding:4px 0;width:max-content}
+#menu summary:hover{color:var(--green-strong)}
+#pills{display:flex;flex-wrap:wrap;gap:8px;padding:6px 0 2px}
+.pill{border-radius:8px;padding:7px 12px;font-size:.875rem}
+/* answers are column-aligned ASCII -- monospace or the tables break. The tint
+   is the assistant's voice; your own words sit in an outline on white. */
 .msg{margin-bottom:18px}
 .you{text-align:right}
-.you span{background:#f0f0f0;border-radius:12px;padding:8px 14px;display:inline-block}
-.bot pre{font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;
-         white-space:pre-wrap;margin:0;padding:12px 14px;background:#fafafa;
-         border:1px solid #eee;border-radius:8px;overflow-x:auto}
-.label{color:#8a8a8a;font-size:12px;margin-bottom:6px}
+.you span{display:inline-block;max-width:100%;text-align:left;overflow-wrap:anywhere;
+          border:1px solid var(--line);border-radius:12px;padding:8px 14px}
+.bot pre{font:.8125rem/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;
+         white-space:pre-wrap;overflow-wrap:anywhere;margin:0;padding:12px 14px;
+         background:var(--surface-tint);border-radius:8px}
+.label{color:var(--ink-muted);font-size:.8125rem;margin-bottom:6px}
+/* what to ask next, under the answer it follows from */
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chips .pill{font-size:.875rem;padding:6px 10px}
 /* the composer */
-form{padding:16px 24px 22px;display:flex;gap:8px}
-#q{flex:1;background:#f5f5f5;border:1px solid #ececec;border-radius:10px;
-   padding:13px 16px;font:inherit;outline:none}
-#q:focus{border-color:#c8c8c8;background:#fff}
-button.send{background:none;border:none;cursor:pointer;color:#9a9a9a;padding:0 8px}
-button.send:hover{color:#1a1a1a}
-.attach{display:grid;place-items:center;color:#9a9a9a;cursor:pointer;padding:0 4px}
-.attach:hover{color:#1a1a1a}
+form{padding:16px 24px 22px;display:flex;gap:8px;align-items:center}
+#q{flex:1;min-width:0;border-radius:10px;padding:12px 14px}
+.send{display:grid;place-items:center;border-radius:10px;padding:10px 12px}
+.attach{display:grid;place-items:center;color:var(--ink-muted);cursor:pointer;
+        padding:8px;border-radius:6px}
+.attach:hover{color:var(--green-strong)}
+/* the file input is drawn as the paperclip, so the paperclip shows its focus */
+.attach:focus-within{outline:2px solid var(--green);outline-offset:2px}
 /* the attached file and what it suggests asking */
 #tray{padding:0 24px}
-.file{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#fafafa;
-      border:1px solid #e6e6e6;border-radius:8px;padding:10px 12px;margin-bottom:10px}
-.file .name{font-weight:600}
-.file .meta{color:#8a8a8a;font-size:13px}
-.file .err{color:#b23c3c;font-size:13px}
-.file button{background:none;border:1px solid #e0e0e0;border-radius:6px;cursor:pointer;
-             font:inherit;font-size:13px;padding:4px 10px}
-.file button:hover:enabled{border-color:#b8b8b8}
+.file{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+      border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:10px}
+.file .name{font-weight:600;overflow-wrap:anywhere}
+.file .meta{color:var(--ink-muted);font-size:.875rem}
+.file .err{color:var(--danger);font-size:.875rem}
+.file button{font-size:.875rem;padding:4px 10px}
 #suggest{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
-.sug{background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:8px 12px;
-     cursor:pointer;font:inherit;text-align:left;color:#1a1a1a}
-.sug:hover{border-color:#b8b8b8;background:#fafafa}
-.sug .hint{display:block;color:#8a8a8a;font-size:12px;margin-top:2px}
-</style></head><body><div id="app">
-<div id="log"><div id="empty">
-  <h1>PharmaCLI chat</h1>
-  <p class="sub">Here are some suggestions:</p>
-  <div class="try">Try these prompts:</div>
-  <div id="pills"></div>
+.sug{border-radius:8px;text-align:left}
+.sug .hint{display:block;color:var(--ink-muted);font-size:.8125rem;margin-top:2px}
+@media (max-width:480px){
+  header,#menu,#tray{padding-left:16px;padding-right:16px}
+  #log{padding:16px}
+  form{padding:12px 16px 16px}
+}
+</style></head><body><main id="app">
+<header><h1>PharmaCLI chat</h1></header>
+<div id="log" role="log" aria-live="polite"><div id="empty">
+  <p class="sub">Ask about your shelf, NADAC prices, or what a drug's label says.
+     Name a drug or give its NDC.</p>
 </div></div>
 <div id="tray"></div>
+<details id="menu" open><summary>All questions</summary><div id="pills"></div></details>
 <form id="f">
 <label class="attach" for="csv" title="Attach an inventory CSV">
-  <input id="csv" type="file" accept=".csv,text/csv" hidden>
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  <span class="vh">Attach an inventory CSV</span>
+  <input id="csv" class="vh" type="file" accept=".csv,text/csv">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"
        stroke-width="1.6"><path d="M21 12l-9 9a5 5 0 0 1-7-7l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-3-3l8-8"/></svg>
 </label>
-<input id="q" placeholder="Ask Something" autocomplete="off" autofocus>
-<button class="send" type="submit" aria-label="Send">
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+<label class="vh" for="q">Your question</label>
+<input id="q" placeholder="Ask a question, e.g. what has lipitor's price done"
+       maxlength="500" autocomplete="off" autofocus>
+<button class="primary send" type="submit" aria-label="Send">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"
        stroke-width="1.6"><path d="M4 12l16-8-6 8 6 8z"/></svg>
-</button></form></div>
+</button></form></main>
 <script>
-const log = document.getElementById('log'), qbox = document.getElementById('q');
+const log = document.getElementById('log'), qbox = document.getElementById('q'),
+      menu = document.getElementById('menu');
 
 // The token arrives in the URL fragment -- the one part of a URL a browser
 // never sends to a server and no proxy logs. Keep it in memory, strip it from
@@ -79,16 +89,35 @@ const log = document.getElementById('log'), qbox = document.getElementById('q');
 const TOKEN = new URLSearchParams(location.hash.slice(1)).get('token') || '';
 history.replaceState(null, '', location.pathname);
 const api = (path, opts = {}) => fetch('/chat' + path, {...opts,
-  headers: {...(opts.headers || {}), Authorization: 'Bearer ' + TOKEN}});
+  headers: {...(opts.headers || {}), Authorization: 'Bearer ' + TOKEN}}).then(check);
 
-// the pills ARE the registry -- fetched, never hardcoded, so a new question in
-// QUESTIONS shows up here with no edit to this page
-api('/prompts').then(r => r.json()).then(ls => {
-  document.getElementById('pills').innerHTML = ls.slice(0, 6)
-    .map(l => `<button class="pill">${esc(l)}</button>`).join('');
-  document.querySelectorAll('.pill').forEach(
-    b => b.onclick = () => send(b.textContent));
+// a failed call says why in words, never "undefined": a 401 is a token that
+// expired or a server that restarted with a new secret
+async function check(r) {
+  if (r.status === 401) throw new Error('this page has expired -- open the new link `pharmacli chat` prints');
+  if (!r.ok) throw new Error(`the server said ${r.status}: ${(await r.text()).slice(0, 300)}`);
+  return r;
+}
+const esc = s => String(s).replace(/[&<>"']/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// A chip asks its question in one click. One that needs a drug ("fill") goes
+// into the box and waits for it instead of being sent bare.
+const chips = cs => cs.map(c => `<button class="pill" data-q="${esc(c.q)}"`
+  + `${c.fill ? ' data-fill' : ''}>${esc(c.label || c.q)}</button>`).join('');
+document.addEventListener('click', e => {
+  const b = e.target.closest('.pill, .sug');
+  if (!b) return;
+  menu.open = false;
+  if ('fill' in b.dataset) { qbox.value = b.dataset.q + ' '; qbox.focus(); }
+  else send(b.dataset.q);
 });
+
+// the menu IS the registry -- fetched, never hardcoded, so a new question in
+// QUESTIONS shows up here with no edit to this page
+api('/prompts').then(r => r.json())
+  .then(cs => document.getElementById('pills').innerHTML = chips(cs))
+  .catch(e => document.getElementById('pills').textContent = e.message);
 
 function add(cls, html) {
   document.getElementById('empty')?.remove();
@@ -97,23 +126,58 @@ function add(cls, html) {
   log.appendChild(d); log.scrollTop = log.scrollHeight;
   return d;
 }
-const esc = s => String(s).replace(/[&<>"']/g,
-  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 async function send(q) {
   if (!q.trim()) return;
-  qbox.value = '';
+  qbox.value = ''; menu.open = false;
   add('you', `<span>${esc(q)}</span>`);
-  const pending = add('bot', '<pre>...</pre>');
+  const bot = add('bot', '<pre>...</pre>');
+  // busy until the answer is whole: a screen reader then reads the finished
+  // answer once, not every token as it streams in
+  bot.setAttribute('aria-busy', 'true');
   try {
-    const r = await api('/ask?q=' + encodeURIComponent(q));
-    const d = await r.json();
-    pending.innerHTML = (d.label ? `<div class="label">· ${esc(d.label)}</div>` : '')
-                      + `<pre>${esc(d.text)}</pre>`;
+    const d = await (await api('/ask?q=' + encodeURIComponent(q))).json();
+    if (d.stream) await stream(q, bot);
+    else bot.innerHTML = (d.label ? `<div class="label">· ${esc(d.label)}</div>` : '')
+                       + `<pre>${esc(d.text)}</pre>`;
+    if (d.chips && d.chips.length)
+      bot.insertAdjacentHTML('beforeend', `<div class="chips">${chips(d.chips)}</div>`);
   } catch (e) {
-    pending.innerHTML = `<pre>the server went away: ${esc(String(e))}</pre>`;
+    bot.innerHTML = `<pre>${esc(e instanceof TypeError ? 'the server went away: ' + e.message
+                                                        : e.message)}</pre>`;
   }
+  bot.setAttribute('aria-busy', 'false');
   log.scrollTop = log.scrollHeight;
+}
+
+// A label answer, a token at a time, from the API's own /ask/stream: the same
+// events curl sees. The rules are format_lines' -- a refusal replaces the text,
+// and an answer that cites none of its passages is not shown.
+async function stream(q, bot) {
+  bot.innerHTML = '<div class="label">· documents</div><pre>...</pre>';
+  const pre = bot.querySelector('pre');
+  const r = await check(await fetch('/ask/stream', {method: 'POST', body: JSON.stringify({question: q}),
+    headers: {Authorization: 'Bearer ' + TOKEN, 'Content-Type': 'application/json'}}));
+  const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buf = '', text = '';
+  for (;;) {
+    const {value, done} = await reader.read();
+    if (done) return;
+    const frames = (buf += value).split('\n\n');
+    buf = frames.pop();                              // a frame cut in half waits for the rest
+    for (const f of frames) {
+      const ev = JSON.parse(f.slice('data: '.length));
+      if (ev.type === 'token') pre.textContent = (text += ev.text);
+      else if (ev.type === 'refusal') pre.textContent = ev.message;
+      else if (ev.type === 'error') pre.textContent = 'answers from package inserts and reimbursement'
+        + ' documents are unavailable right now -- docker compose up -d chroma ollama';
+      else if (ev.type === 'sources') pre.textContent = ev.grounded
+        ? text.trim() + '\n\n' + ev.items.map(s => `[${s.n}] ${s.cite}`).join('\n')
+        : 'the answer cited none of the passages it was given, so it is not shown.\n'
+          + 'try naming the drug, or ask about one section of its label.';
+      log.scrollTop = log.scrollHeight;
+    }
+  }
 }
 document.getElementById('f').onsubmit = e => { e.preventDefault(); send(qbox.value); };
 
@@ -132,12 +196,15 @@ function drawTray(d) {
     `<button class="sug" data-q="${esc(s.q)}">${esc(s.q)}<span class="hint">${esc(s.hint)}</span></button>`).join('');
   tray.innerHTML = `<div class="file"><span class="name">${esc(d.name)}</span>${meta}${buttons}</div>`
                  + (sug ? `<div id="suggest">${sug}</div>` : '');
-  document.querySelectorAll('.sug').forEach(b => b.onclick = () => send(b.dataset.q));
   const save = document.getElementById('save'), drop = document.getElementById('drop');
   if (save) save.onclick = async () => {
-    const j = await (await api('/save', {method: 'POST'})).json();
-    save.textContent = j.error ? j.error : `Saved ${j.saved.toLocaleString()} rows`;
-    save.disabled = true;
+    try {
+      const j = await (await api('/save', {method: 'POST'})).json();
+      save.textContent = j.error ? j.error : `Saved ${j.saved.toLocaleString()} rows`;
+      save.disabled = true;
+    } catch (e) {
+      save.textContent = 'Not saved: ' + e.message;     // never let a failed save look done
+    }
   };
   if (drop) drop.onclick = async () => {
     await api('/clear', {method: 'POST'});
@@ -149,9 +216,13 @@ csv.onchange = async () => {
   const file = csv.files[0];
   if (!file) return;
   drawTray({name: file.name, error: 'reading…', reasons: []});
-  const r = await api('/upload', {method: 'POST', body: await file.text(),
-                                  headers: {'X-Filename': file.name}});
-  drawTray(await r.json());
+  try {
+    const r = await api('/upload', {method: 'POST', body: await file.text(),
+                                    headers: {'X-Filename': file.name}});
+    drawTray(await r.json());
+  } catch (e) {
+    drawTray({name: file.name, error: e.message, reasons: []});
+  }
   csv.value = '';
 };
 </script></body></html>

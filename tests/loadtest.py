@@ -42,7 +42,9 @@ def questions(n: int, skip: int = 0) -> list[str]:
     # that cache and reports a 3x latency improvement under load that is not
     # real. 50 questions covers --n 16 at three levels.
     rows = [json.loads(line) for line in QA.read_text().splitlines() if line.strip()]
-    qs = [r["q"] for r in rows]
+    # the rows a patient would ask are scored against the patient view's gate,
+    # not sent through the chat: the load is the 50 questions it always was
+    qs = [r["q"] for r in rows if r.get("gate") != "patient"]
     return [qs[(skip + i) % len(qs)] for i in range(n)]
 
 

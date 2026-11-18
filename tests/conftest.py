@@ -1,3 +1,7 @@
+import os
+
+import pytest
+
 from pharmacli.models.rows import COLUMNS, RawRow
 
 
@@ -81,7 +85,10 @@ def ollama(reply="", embedding=None, down=False):
         if request.url.path == "/api/embed":
             vec = embedding or (lambda text: [1.0, 0.0])
             return httpx.Response(200, json={"embeddings": [vec(t) for t in body["input"]]})
-        pieces = [reply[i:i + 3] for i in range(0, len(reply), 3)]
+        # a callable reply sees the request, so a test can answer each prompt
+        # differently and keep what was sent
+        text = reply(body) if callable(reply) else reply
+        pieces = [text[i:i + 3] for i in range(0, len(text), 3)]
         lines = [{"message": {"content": p}, "done": False} for p in pieces]
         lines.append({"message": {"content": ""}, "done": True, "prompt_eval_count": 120,
                       "eval_count": len(pieces), "prompt_eval_duration": 40_000_000,
@@ -112,3 +119,159 @@ def userag(fn, chroma, corpus=RAG_CORPUS, **kw):
             cfg = replace(load(), ollama_url="http://ollama", **(pinned | kw))
             return await fn(rag.Rag(cfg, http, chroma, corpus))
     return asyncio.run(go())
+
+
+# ── patient profiles: accounts, sessions and a patient database per test ────
+
+PASSWORD = "correct horse battery"          # 21 characters; the floor is 12
+
+# Labels for the patient features. Four drugs: gammavir has two labels, and
+# deltaquin's generic name ends in another drug's, the way "losartan potassium
+# and hydrochlorothiazide" does in the real corpus.
+PATIENT_CORPUS = {
+    "inserts": [
+        {"doc_id": "alpha", "title": "ALPHAZINE", "generic": "ALPHAZINE HYDROCHLORIDE",
+         "version": 2, "label_date": "2026-01-02", "ndcs": ["11111111101"]},
+        {"doc_id": "beta", "title": "BETAMOL", "generic": "BETAMOL",
+         "version": 5, "label_date": "2026-02-03", "ndcs": ["22222222201"]},
+        {"doc_id": "gamma", "title": "GAMMAVIR", "generic": "GAMMAVIR SODIUM",
+         "version": 1, "label_date": "2026-03-04", "ndcs": ["33333333301"]},
+        {"doc_id": "gamma-er", "title": "GAMMAVIR ER",
+         "generic": "GAMMAVIR SODIUM EXTENDED-RELEASE",
+         "version": 4, "label_date": "2026-04-05", "ndcs": ["33333333401"]},
+        {"doc_id": "delta", "title": "DELTAQUIN PLUS", "generic": "DELTAQUIN AND BETAMOL",
+         "version": 3, "label_date": "2026-05-06", "ndcs": ["44444444401"]},
+    ],
+    "business": [],
+}
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _patient_database_stays_out_of_the_repository(tmp_path_factory):
+    # The API opens PHARMACLI_PATIENT_DB whenever a request needs it. Without
+    # this, a suite run from the repository root would read and write the
+    # developer's own patients.db. Session-wide so the module-scoped API
+    # fixtures are covered too; a test that wants its own file sets it again.
+    keep = {k: os.environ.get(k) for k in ("PHARMACLI_PATIENT_DB", "PHARMACLI_SCRYPT_N")}
+    os.environ["PHARMACLI_PATIENT_DB"] = str(tmp_path_factory.mktemp("patients") / "suite.db")
+    os.environ["PHARMACLI_SCRYPT_N"] = "16"         # the real cost is 2^17: 0.3s a hash
+    yield
+    for key, value in keep.items():
+        os.environ.pop(key, None) if value is None else os.environ.__setitem__(key, value)
+
+
+@pytest.fixture(autouse=True)
+def _no_recall_lookups(monkeypatch):
+    # a patient report asks openFDA for recent recalls; no test may reach the network
+    from pharmacli import review
+
+    monkeypatch.setattr(review, "_recalls", lambda day: ())
+
+
+@pytest.fixture
+def clinic(tmp_path, monkeypatch):
+    # the API over an empty patient database holding one pharmacist, "rph"
+    pytest.importorskip("fastapi")
+    from contextlib import closing
+
+    from fastapi.testclient import TestClient
+
+    db = str(tmp_path / "patients.db")
+    monkeypatch.setenv("PHARMACLI_JWT_SECRET", "unit-test-secret")
+    monkeypatch.setenv("PHARMACLI_MODEL", str(tmp_path / "absent.joblib"))
+    monkeypatch.setenv("PHARMACLI_DB", str(tmp_path / "absent.db"))
+    monkeypatch.setenv("PHARMACLI_PATIENT_DB", db)
+    from pharmacli import patients, serve
+
+    with closing(patients.connect(db)) as conn:
+        patients.add_account(conn, "rph", PASSWORD, "pharmacist", 16)
+    with TestClient(serve.app) as c:
+        c.db = db
+        # the test labels, not whatever corpus.json the working directory holds
+        serve.app.dependency_overrides[serve.get_corpus] = lambda: PATIENT_CORPUS
+        # and no background pair checks against whatever model the machine runs:
+        # the queue is driven directly, with the stand-in model, in test_review
+        serve.S.pop("wake", None)
+        yield c
+        serve.app.dependency_overrides.clear()
+
+
+def signin(client, username="rph", password=PASSWORD) -> dict:
+    r = client.post("/auth/login", json={"username": username, "password": password})
+    assert r.status_code == 200, r.text
+    return {"Authorization": f"Bearer {r.json()['token']}"}
+
+
+def patient_login(client, pid, username="pat") -> dict:
+    # a patient account for an existing record, past its one-time password
+    from contextlib import closing
+
+    from pharmacli import patients
+
+    with closing(patients.connect(client.db)) as conn:
+        _, once = patients.set_login(conn, pid, username, 16)
+    first = signin(client, username, once)
+    r = client.post("/auth/password", json={"current": once, "new": PASSWORD}, headers=first)
+    assert r.status_code == 200, r.text
+    return signin(client, username)
+
+
+# ── label PDFs and class terms for the patient features ─────────────────────
+
+CLASSES = {
+    "aliases": {"Testase Inhibitor [EPC]": ["TSI"]},
+    "drugs": {
+        "alphazine": {"pharm_class": ["Testase Inhibitor [EPC]"]},
+        "betamol": {"pharm_class": ["Cytochrome P450 3A4 Inducers [MoA]"]},
+        "gammavir": {"pharm_class": ["Nucleoside Analog Antiviral [EPC]"]},
+        "deltaquin": {"pharm_class": [], "terms": [
+            {"term": "quinoline", "source": "DELTAQUIN PLUS label, p.2"}]},
+    },
+}
+
+
+def label(folder, doc_id, *, boxed=(), dose=(), contra=(), warn=(), inter=(), renal=(),
+          hepatic=(), pregnancy=(), counsel=("Take it with food.",)):
+    # a label in the current numbered format: Highlights and contents on page 1
+    # (never quoted), the sections a check reads on page 2, the rest on page 3
+    front = ["HIGHLIGHTS OF PRESCRIBING INFORMATION",
+             "This summary names betamol, gammavir and deltaquin and is never quoted.",
+             "FULL PRESCRIBING INFORMATION: CONTENTS", "1 INDICATIONS AND USAGE",
+             "2 DOSAGE AND ADMINISTRATION", "4 CONTRAINDICATIONS",
+             "5 WARNINGS AND PRECAUTIONS", "7 DRUG INTERACTIONS",
+             "8 USE IN SPECIFIC POPULATIONS", "17 PATIENT COUNSELING INFORMATION"]
+    body = [*(["WARNING: SERIOUS RISKS", *boxed] if boxed else []),
+            "1 INDICATIONS AND USAGE", "Treats testitis in adults.",
+            "2 DOSAGE AND ADMINISTRATION", "2.1 Usual Dose", "Take 10 mg once daily.", *dose,
+            "4 CONTRAINDICATIONS", "Known hypersensitivity to the product.", *contra,
+            "5 WARNINGS AND PRECAUTIONS", "5.1 Liver Injury", "Liver injury has been reported.",
+            *warn, "7 DRUG INTERACTIONS", "7.1 Other Drugs", "Food does not change absorption.",
+            *inter]
+    back = ["8 USE IN SPECIFIC POPULATIONS",
+            *(["8.1 Pregnancy", *pregnancy] if pregnancy else []),
+            *(["8.6 Renal Impairment", *renal] if renal else []),
+            *(["8.7 Hepatic Impairment", *hepatic] if hepatic else []),
+            "17 PATIENT COUNSELING INFORMATION", *counsel]
+    # two more pages, so a heading on the contents page and again in the text is
+    # on 2 of 5 pages: rag.parse drops a line on more than half as a running header
+    makepdf(folder / f"{doc_id}.pdf", front, body, back,
+            ["11 DESCRIPTION", f"A white tablet ({doc_id})."],
+            ["16 HOW SUPPLIED/STORAGE AND HANDLING", f"Bottles of 30 ({doc_id})."])
+
+
+@pytest.fixture
+def labels(tmp_path):
+    label(tmp_path, "alpha",
+          contra=["Do not use alphazine with betamol."],
+          inter=["Reduce the alphazine dose by half when it is taken with gammavir."],
+          warn=["Monitor liver enzymes when alphazine is used with deltaquin."],
+          renal=["Reduce the dose to 5 mg when creatinine clearance is below 30 mL/min."],
+          hepatic=["Avoid alphazine in severe hepatic impairment."],
+          pregnancy=["Alphazine may cause fetal harm."])
+    label(tmp_path, "beta", pregnancy=["No human data are available."])
+    label(tmp_path, "gamma", warn=["Monitor liver enzymes when gammavir is used with deltaquin."])
+    label(tmp_path, "gamma-er")
+    label(tmp_path, "delta", dose=["Deltaquin and betamol tablets are taken once daily."])
+    from pharmacli import review
+
+    return review.Labels(PATIENT_CORPUS, CLASSES, str(tmp_path))

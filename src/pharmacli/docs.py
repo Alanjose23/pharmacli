@@ -17,6 +17,7 @@ from pharmacli.enrich import _candidates, pad
 log = logging.getLogger(__name__)
 
 CORPUS = "corpus.json"
+CLASSES = "classes.json"
 DOCS_DIR = "data/docs"
 LABEL_URL = "https://api.fda.gov/drug/label.json"
 PDF_URL = "https://dailymed.nlm.nih.gov/dailymed/downloadpdffile.cfm?setId={}"
@@ -60,6 +61,55 @@ def load_corpus(path: str = CORPUS) -> dict:
 
 def save_corpus(corpus: dict, path: str = CORPUS) -> None:
     Path(path).write_text(json.dumps(corpus, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def drug_key(entry: dict) -> str:
+    # one drug per first word of a generic name -- what rag.resolve matches on.
+    # The 50 labels are 45 drugs this way.
+    return entry["generic"].split()[0].lower()
+
+
+def load_classes(path: str = CLASSES) -> dict:
+    # Absent means every drug's class is unknown, which the pair check reads as
+    # "cannot say the labels state no interaction", never as "none to look for".
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    except FileNotFoundError:
+        return {"aliases": {}, "drugs": {}}
+
+
+def classes(corpus: dict, known: dict, lookup=None, tries: int = 8) -> dict:
+    # openFDA's pharmacologic classes for every drug in the corpus: labels often
+    # name a class ("strong CYP3A4 inducers") where they do not name a drug.
+    # Looked up once and kept in classes.json, because a keyless openFDA allows
+    # 1,000 lookups a day; a miss is kept too, or every run would ask again.
+    # Everything else in the file (the aliases, a pharmacist's own terms, the
+    # reviewed flag) is carried over untouched.
+    from datetime import date
+
+    from pharmacli import enrich
+
+    lookup = lookup or enrich.lookup
+    out = {"reviewed": False, "aliases": {}, **known, "drugs": dict(known.get("drugs") or {})}
+    ndcs: dict[str, list[str]] = {}
+    for e in corpus["inserts"]:
+        ndcs.setdefault(drug_key(e), []).extend(e["ndcs"])
+    for key, mine in ndcs.items():
+        if key in out["drugs"]:
+            continue
+        found: dict = {"ndc": None, "pharm_class": []}
+        # a label lists many packages and openFDA may list none of the first
+        # few, or list one without a class
+        for ndc in mine[:tries]:
+            info = lookup(ndc)
+            time.sleep(PAUSE)
+            if info and info.get("pharm_class"):
+                found = {"ndc": ndc, "pharm_class": sorted(info["pharm_class"])}
+                break
+        out["drugs"][key] = found | {"looked": date.today().isoformat()}
+        log.info("%s: %d classes", key, len(found["pharm_class"]))
+    return out
 
 
 def digest(corpus: dict) -> str:

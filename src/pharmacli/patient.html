@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Your medicines · PharmaCLI</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="/static/theme.css">
+<script src="/static/app.js" defer></script>
+<script src="/static/patient.js" defer></script>
+</head><body><main class="page">
+<header class="top">
+  <h1 id="hello">Your medicines</h1>
+  <button id="signout" type="button">Sign out</button>
+</header>
+<p class="muted">This page shows the medicines on file for you and what each one's FDA label
+   says, word for word. It does not give medical advice. Your pharmacist does.</p>
+<section class="card" aria-labelledby="meds-h">
+  <h2 id="meds-h">Medication list</h2>
+  <ul id="meds"></ul>
+</section>
+<section class="card" aria-labelledby="counsel-h">
+  <h2 id="counsel-h">What each label says to tell patients</h2>
+  <div id="counsel"></div>
+</section>
+<section class="card" aria-labelledby="recalls-h">
+  <h2 id="recalls-h">Recall notices</h2>
+  <div id="recalls"></div>
+</section>
+<section class="card" aria-labelledby="ask-h">
+  <h2 id="ask-h">Ask what a label says</h2>
+  <form id="ask" class="row">
+    <div class="field wide">
+      <label for="q">A general question about a medicine, naming the medicine</label>
+      <input id="q" maxlength="500" required autocomplete="off"
+             placeholder="what are the side effects of gabapentin">
+    </div>
+    <button class="primary" type="submit">Ask</button>
+  </form>
+  <div id="answer" aria-live="polite"></div>
+</section>
+</main></body></html>

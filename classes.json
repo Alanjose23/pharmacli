@@ -1,0 +1,614 @@
+{
+ "aliases": {
+  "Angiotensin 2 Receptor Blocker [EPC]": [
+   "angiotensin receptor blocker",
+   "angiotensin II receptor",
+   "ARB",
+   "antihypertensive"
+  ],
+  "Angiotensin Converting Enzyme Inhibitor [EPC]": [
+   "ACE inhibitor",
+   "antihypertensive"
+  ],
+  "Anti-epileptic Agent [EPC]": [
+   "antiepileptic",
+   "anticonvulsant",
+   "AED"
+  ],
+  "Antimetabolite Immunosuppressant [EPC]": [
+   "immunosuppressant",
+   "immunosuppressive"
+  ],
+  "Atypical Antipsychotic [EPC]": [
+   "antipsychotic",
+   "neuroleptic"
+  ],
+  "Catecholamine [EPC]": [
+   "sympathomimetic"
+  ],
+  "Central Nervous System Stimulant [EPC]": [
+   "CNS stimulant",
+   "stimulant",
+   "sympathomimetic",
+   "amphetamine"
+  ],
+  "Corticosteroid [EPC]": [
+   "glucocorticoid",
+   "steroid"
+  ],
+  "Decreased Central Nervous System Disorganized Electrical Activity [PE]": [
+   "antiepileptic",
+   "anti-epileptic",
+   "anticonvulsant",
+   "AED"
+  ],
+  "Estrogen [EPC]": [
+   "oral contraceptive",
+   "hormonal contraceptive"
+  ],
+  "GLP-1 Receptor Agonist [EPC]": [
+   "GLP-1"
+  ],
+  "HMG-CoA Reductase Inhibitor [EPC]": [
+   "statin"
+  ],
+  "Nonsteroidal Anti-inflammatory Drug [EPC]": [
+   "NSAID",
+   "non-steroidal anti-inflammatory",
+   "nonsteroidal anti-inflammatory"
+  ],
+  "Opioid Agonist [EPC]": [
+   "opioid"
+  ],
+  "Organic Cation Transporter 2 Inhibitors [MoA]": [
+   "OCT2 inhibitor"
+  ],
+  "Partial Opioid Agonist [EPC]": [
+   "opioid"
+  ],
+  "Penicillin-class Antibacterial [EPC]": [
+   "penicillin",
+   "antibacterial",
+   "antibiotic"
+  ],
+  "Phenothiazine [EPC]": [
+   "antipsychotic",
+   "neuroleptic"
+  ],
+  "Phosphodiesterase 5 Inhibitor [EPC]": [
+   "PDE5 inhibitor",
+   "PDE-5 inhibitor",
+   "phosphodiesterase type 5"
+  ],
+  "Potassium Salt [EPC]": [
+   "potassium supplement",
+   "potassium-containing"
+  ],
+  "Proton Pump Inhibitor [EPC]": [
+   "PPI"
+  ],
+  "Serotonin Reuptake Inhibitor [EPC]": [
+   "SSRI",
+   "serotonergic",
+   "antidepressant"
+  ],
+  "Serotonin and Norepinephrine Reuptake Inhibitor [EPC]": [
+   "SNRI",
+   "serotonin norepinephrine reuptake inhibitor",
+   "serotonergic",
+   "antidepressant"
+  ],
+  "Thiazide Diuretic [EPC]": [
+   "thiazide",
+   "diuretic",
+   "antihypertensive"
+  ],
+  "Tricyclic Antidepressant [EPC]": [
+   "tricyclic",
+   "TCA",
+   "antidepressant"
+  ],
+  "beta-Adrenergic Blocker [EPC]": [
+   "beta blocker",
+   "beta-adrenergic blocking",
+   "antihypertensive"
+  ],
+  "l-Thyroxine [EPC]": [
+   "thyroid hormone",
+   "levothyroxine"
+  ]
+ },
+ "drugs": {
+  "amoxicillin": {
+   "looked": "2026-11-16",
+   "ndc": "59651002501",
+   "pharm_class": [
+    "Penicillin-class Antibacterial [EPC]",
+    "Penicillins [CS]",
+    "beta Lactamase Inhibitor [EPC]",
+    "beta Lactamase Inhibitors [MoA]"
+   ]
+  },
+  "aripiprazole": {
+   "looked": "2026-11-16",
+   "ndc": "65162089603",
+   "pharm_class": [
+    "Atypical Antipsychotic [EPC]"
+   ],
+   "terms": [
+    {
+     "source": "OXYCODONE HYDROCHLORIDE label (version 7, 2026-01-14), p.10: \"other CNS depressants, including alcohol (e.g., non-benzodiazepine sedatives/hypnotics, anxiolytics, tranquilizers, muscle relaxants, general anesthetics, antipsychotics, gabapentinoids [gabapentin or pregabalin], and other opioids)\"",
+     "term": "CNS depressant"
+    }
+   ]
+  },
+  "atorvastatin": {
+   "looked": "2026-11-16",
+   "ndc": "50268009315",
+   "pharm_class": [
+    "HMG-CoA Reductase Inhibitor [EPC]",
+    "Hydroxymethylglutaryl-CoA Reductase Inhibitors [MoA]"
+   ]
+  },
+  "buprenorphine": {
+   "looked": "2026-11-16",
+   "ndc": "59385002160",
+   "pharm_class": [
+    "Partial Opioid Agonist [EPC]",
+    "Partial Opioid Agonists [MoA]"
+   ],
+   "terms": [
+    {
+     "source": "OXYCODONE HYDROCHLORIDE label (version 7, 2026-01-14), p.10: \"other CNS depressants, including alcohol (e.g., non-benzodiazepine sedatives/hypnotics, anxiolytics, tranquilizers, muscle relaxants, general anesthetics, antipsychotics, gabapentinoids [gabapentin or pregabalin], and other opioids)\"",
+     "term": "CNS depressant"
+    }
+   ]
+  },
+  "buspirone": {
+   "looked": "2026-11-16",
+   "ndc": null,
+   "pharm_class": [],
+   "terms": [
+    {
+     "source": "BUSPIRONE HYDROCHLORIDE label (version 19, 2023-07-23), p.1: \"are an antianxiety agent\"",
+     "term": "antianxiety"
+    },
+    {
+     "source": "BUSPIRONE HYDROCHLORIDE label (version 19, 2023-07-23), p.1: \"are an antianxiety agent\"",
+     "term": "anxiolytic"
+    }
+   ]
+  },
+  "carbamazepine": {
+   "looked": "2026-11-16",
+   "ndc": "13668026801",
+   "pharm_class": [
+    "Cytochrome P450 1A2 Inducers [MoA]",
+    "Cytochrome P450 2B6 Inducers [MoA]",
+    "Cytochrome P450 2C19 Inducers [MoA]",
+    "Cytochrome P450 2C9 Inducers [MoA]",
+    "Cytochrome P450 3A4 Inducers [MoA]",
+    "Decreased Central Nervous System Disorganized Electrical Activity [PE]",
+    "Mood Stabilizer [EPC]"
+   ]
+  },
+  "chlorpromazine": {
+   "looked": "2026-11-16",
+   "ndc": "00832601700",
+   "pharm_class": [
+    "Phenothiazine [EPC]",
+    "Phenothiazines [CS]"
+   ],
+   "terms": [
+    {
+     "source": "OXYCODONE HYDROCHLORIDE label (version 7, 2026-01-14), p.10: \"other CNS depressants, including alcohol (e.g., non-benzodiazepine sedatives/hypnotics, anxiolytics, tranquilizers, muscle relaxants, general anesthetics, antipsychotics, gabapentinoids [gabapentin or pregabalin], and other opioids)\"",
+     "term": "CNS depressant"
+    }
+   ]
+  },
+  "deutetrabenazine": {
+   "looked": "2026-11-16",
+   "ndc": null,
+   "pharm_class": [],
+   "terms": [
+    {
+     "source": "AUSTEDO label (version 35, 2025-02-28), p.1: \"vesicular monoamine transporter 2 (VMAT2) inhibitors indicated in adults\"",
+     "term": "VMAT2 inhibitor"
+    },
+    {
+     "source": "AUSTEDO label (version 35, 2025-02-28), p.1: \"vesicular monoamine transporter 2 (VMAT2) inhibitors indicated in adults\"",
+     "term": "vesicular monoamine transporter 2"
+    }
+   ]
+  },
+  "dexamethasone": {
+   "looked": "2026-11-16",
+   "ndc": "00641036725",
+   "pharm_class": [
+    "Corticosteroid Hormone Receptor Agonists [MoA]",
+    "Corticosteroid [EPC]"
+   ]
+  },
+  "diclofenac": {
+   "looked": "2026-11-16",
+   "ndc": "59651084201",
+   "pharm_class": [
+    "Anti-Inflammatory Agents",
+    "Cyclooxygenase Inhibitors [MoA]",
+    "Decreased Prostaglandin Production [PE]",
+    "Non-Steroidal [CS]",
+    "Nonsteroidal Anti-inflammatory Drug [EPC]"
+   ]
+  },
+  "doxepin": {
+   "looked": "2026-11-16",
+   "ndc": "24658079301",
+   "pharm_class": [
+    "Tricyclic Antidepressant [EPC]"
+   ]
+  },
+  "epinephrine": {
+   "looked": "2026-11-16",
+   "ndc": "82580001002",
+   "pharm_class": [
+    "Adrenergic alpha-Agonists [MoA]",
+    "Adrenergic beta-Agonists [MoA]",
+    "Catecholamine [EPC]",
+    "Catecholamines [CS]",
+    "alpha-Adrenergic Agonist [EPC]",
+    "beta-Adrenergic Agonist [EPC]"
+   ]
+  },
+  "estradiol": {
+   "looked": "2026-11-16",
+   "ndc": "00378461926",
+   "pharm_class": [
+    "Estradiol Congeners [CS]",
+    "Estrogen Receptor Agonists [MoA]",
+    "Estrogen [EPC]"
+   ]
+  },
+  "evolocumab": {
+   "looked": "2026-11-16",
+   "ndc": "72511014301",
+   "pharm_class": [
+    "Antibodies",
+    "Monoclonal [CS]",
+    "PCSK9 Inhibitor [EPC]",
+    "PCSK9 Inhibitors [MoA]"
+   ]
+  },
+  "fluoxetine": {
+   "looked": "2026-11-16",
+   "ndc": "62332002230",
+   "pharm_class": [
+    "Serotonin Reuptake Inhibitor [EPC]",
+    "Serotonin Uptake Inhibitors [MoA]"
+   ]
+  },
+  "fluphenazine": {
+   "looked": "2026-11-16",
+   "ndc": "69238167801",
+   "pharm_class": [
+    "Phenothiazine [EPC]",
+    "Phenothiazines [CS]"
+   ],
+   "terms": [
+    {
+     "source": "OXYCODONE HYDROCHLORIDE label (version 7, 2026-01-14), p.10: \"other CNS depressants, including alcohol (e.g., non-benzodiazepine sedatives/hypnotics, anxiolytics, tranquilizers, muscle relaxants, general anesthetics, antipsychotics, gabapentinoids [gabapentin or pregabalin], and other opioids)\"",
+     "term": "CNS depressant"
+    }
+   ]
+  },
+  "gabapentin": {
+   "looked": "2026-11-16",
+   "ndc": "68001041100",
+   "pharm_class": [
+    "Decreased Central Nervous System Disorganized Electrical Activity [PE]"
+   ],
+   "terms": [
+    {
+     "source": "OXYCODONE HYDROCHLORIDE label (version 7, 2026-01-14), p.10: \"other CNS depressants, including alcohol (e.g., non-benzodiazepine sedatives/hypnotics, anxiolytics, tranquilizers, muscle relaxants, general anesthetics, antipsychotics, gabapentinoids [gabapentin or pregabalin], and other opioids)\"",
+     "term": "gabapentinoid"
+    },
+    {
+     "source": "GABAPENTIN label (version 6, 2026-04-24), p.9: \"with another CNS depressant, particularly an opioid\"",
+     "term": "CNS depressant"
+    }
+   ]
+  },
+  "glucagon": {
+   "looked": "2026-11-16",
+   "ndc": "00548835101",
+   "pharm_class": [
+    "Antihypoglycemic Agent [EPC]",
+    "Decreased GI Motility [PE]",
+    "Decreased GI Smooth Muscle Tone [PE]",
+    "Decreased Glycolysis [PE]",
+    "Gastrointestinal Motility Inhibitor [EPC]",
+    "Increased Gluconeogenesis [PE]",
+    "Increased Glycogenolysis [PE]"
+   ]
+  },
+  "ibuprofen": {
+   "looked": "2026-11-16",
+   "ndc": "70512078010",
+   "pharm_class": [
+    "Anti-Inflammatory Agents",
+    "Cyclooxygenase Inhibitors [MoA]",
+    "Non-Steroidal [CS]",
+    "Nonsteroidal Anti-inflammatory Drug [EPC]"
+   ]
+  },
+  "lacosamide": {
+   "looked": "2026-11-16",
+   "ndc": "31722081205",
+   "pharm_class": [
+    "Decreased Central Nervous System Disorganized Electrical Activity [PE]"
+   ]
+  },
+  "lamotrigine": {
+   "looked": "2026-11-16",
+   "ndc": "55111041905",
+   "pharm_class": [
+    "Anti-epileptic Agent [EPC]",
+    "Decreased Central Nervous System Disorganized Electrical Activity [PE]",
+    "Dihydrofolate Reductase Inhibitors [MoA]",
+    "Mood Stabilizer [EPC]",
+    "Organic Cation Transporter 2 Inhibitors [MoA]"
+   ]
+  },
+  "levothyroxine": {
+   "looked": "2026-11-16",
+   "ndc": "68180096501",
+   "pharm_class": [
+    "Thyroxine [CS]",
+    "l-Thyroxine [EPC]"
+   ]
+  },
+  "lisdexamfetamine": {
+   "looked": "2026-11-16",
+   "ndc": "64850055001",
+   "pharm_class": [
+    "Central Nervous System Stimulant [EPC]",
+    "Central Nervous System Stimulation [PE]"
+   ]
+  },
+  "lisinopril": {
+   "looked": "2026-11-16",
+   "ndc": "31722017201",
+   "pharm_class": [
+    "Angiotensin Converting Enzyme Inhibitor [EPC]",
+    "Angiotensin-converting Enzyme Inhibitors [MoA]"
+   ]
+  },
+  "losartan": {
+   "looked": "2026-11-16",
+   "ndc": "43547042303",
+   "pharm_class": [
+    "Angiotensin 2 Receptor Antagonists [MoA]",
+    "Angiotensin 2 Receptor Blocker [EPC]",
+    "Increased Diuresis [PE]",
+    "Thiazide Diuretic [EPC]",
+    "Thiazides [CS]"
+   ]
+  },
+  "metoprolol": {
+   "looked": "2026-11-16",
+   "ndc": "60687039001",
+   "pharm_class": [
+    "Adrenergic beta-Antagonists [MoA]",
+    "beta-Adrenergic Blocker [EPC]"
+   ]
+  },
+  "mirtazapine": {
+   "looked": "2026-11-16",
+   "ndc": null,
+   "pharm_class": [],
+   "terms": [
+    {
+     "source": "MIRTAZAPINE label (version 15, 2025-09-12), p.1: \"serotonergic antidepressants, including mirtazapine\"",
+     "term": "serotonergic"
+    },
+    {
+     "source": "MIRTAZAPINE label (version 15, 2025-09-12), p.1: \"serotonergic antidepressants, including mirtazapine\"",
+     "term": "antidepressant"
+    }
+   ]
+  },
+  "montelukast": {
+   "looked": "2026-11-16",
+   "ndc": "57237021230",
+   "pharm_class": [
+    "Leukotriene Receptor Antagonist [EPC]",
+    "Leukotriene Receptor Antagonists [MoA]"
+   ]
+  },
+  "mycophenolate": {
+   "looked": "2026-11-16",
+   "ndc": "00004025901",
+   "pharm_class": [
+    "Antimetabolite Immunosuppressant [EPC]"
+   ]
+  },
+  "nicotine": {
+   "looked": "2026-11-16",
+   "ndc": "45802087305",
+   "pharm_class": [
+    "Cholinergic Nicotinic Agonist [EPC]",
+    "Nicotine [CS]"
+   ]
+  },
+  "omeprazole": {
+   "looked": "2026-11-16",
+   "ndc": "68462039501",
+   "pharm_class": [
+    "Cytochrome P450 2C19 Inhibitors [MoA]",
+    "Proton Pump Inhibitor [EPC]",
+    "Proton Pump Inhibitors [MoA]"
+   ]
+  },
+  "oxycodone": {
+   "looked": "2026-11-16",
+   "ndc": "31722048401",
+   "pharm_class": [
+    "Full Opioid Agonists [MoA]",
+    "Opioid Agonist [EPC]"
+   ],
+   "terms": [
+    {
+     "source": "OXYCODONE HYDROCHLORIDE label (version 7, 2026-01-14), p.10: \"other CNS depressants, including alcohol (e.g., non-benzodiazepine sedatives/hypnotics, anxiolytics, tranquilizers, muscle relaxants, general anesthetics, antipsychotics, gabapentinoids [gabapentin or pregabalin], and other opioids)\"",
+     "term": "CNS depressant"
+    }
+   ]
+  },
+  "phenobarbital": {
+   "looked": "2026-11-16",
+   "ndc": null,
+   "pharm_class": [],
+   "terms": [
+    {
+     "source": "PHENOBARBITAL label (version 29, 2024-07-30), p.1: \"Phenobarbital, a long-acting barbiturate, is a central nervous system depressant\"",
+     "term": "barbiturate"
+    },
+    {
+     "source": "PHENOBARBITAL label (version 29, 2024-07-30), p.1: \"Phenobarbital, a long-acting barbiturate, is a central nervous system depressant\"",
+     "term": "CNS depressant"
+    },
+    {
+     "source": "PHENOBARBITAL label (version 29, 2024-07-30), p.1: \"Phenobarbital, a long-acting barbiturate, is a central nervous system depressant\"",
+     "term": "central nervous system depressant"
+    }
+   ]
+  },
+  "potassium": {
+   "looked": "2026-11-16",
+   "ndc": "68001061900",
+   "pharm_class": [
+    "Increased Large Intestinal Motility [PE]",
+    "Inhibition Large Intestine Fluid/Electrolyte Absorption [PE]",
+    "Osmotic Activity [MoA]",
+    "Osmotic Laxative [EPC]",
+    "Potassium Compounds [CS]",
+    "Potassium Salt [EPC]"
+   ]
+  },
+  "pravastatin": {
+   "looked": "2026-11-16",
+   "ndc": "84386003190",
+   "pharm_class": [
+    "HMG-CoA Reductase Inhibitor [EPC]",
+    "Hydroxymethylglutaryl-CoA Reductase Inhibitors [MoA]"
+   ]
+  },
+  "pregabalin": {
+   "looked": "2026-11-16",
+   "ndc": null,
+   "pharm_class": [],
+   "terms": [
+    {
+     "source": "OXYCODONE HYDROCHLORIDE label (version 7, 2026-01-14), p.10: \"other CNS depressants, including alcohol (e.g., non-benzodiazepine sedatives/hypnotics, anxiolytics, tranquilizers, muscle relaxants, general anesthetics, antipsychotics, gabapentinoids [gabapentin or pregabalin], and other opioids)\"",
+     "term": "gabapentinoid"
+    },
+    {
+     "source": "PREGABALIN label (version 1, 2025-12-12), p.7: \"reduction or withdrawal of CNS depressants (including pregabalin capsules)\"",
+     "term": "CNS depressant"
+    }
+   ]
+  },
+  "ribociclib": {
+   "looked": "2026-11-16",
+   "ndc": "00078086001",
+   "pharm_class": [
+    "Cytochrome P450 3A Inhibitors [MoA]",
+    "Kinase Inhibitor [EPC]",
+    "Kinase Inhibitors [MoA]"
+   ]
+  },
+  "risperidone": {
+   "looked": "2026-11-16",
+   "ndc": null,
+   "pharm_class": [],
+   "terms": [
+    {
+     "source": "RISPERIDONE label (version 35, 2026-08-20), p.1: \"Risperidone is an atypical antipsychotic indicated for\"",
+     "term": "atypical antipsychotic"
+    },
+    {
+     "source": "RISPERIDONE label (version 35, 2026-08-20), p.1: \"Risperidone is an atypical antipsychotic indicated for\"",
+     "term": "antipsychotic"
+    },
+    {
+     "source": "RISPERIDONE label (version 35, 2026-08-20), p.1: \"Risperidone is an atypical antipsychotic indicated for\"",
+     "term": "neuroleptic"
+    },
+    {
+     "source": "OXYCODONE HYDROCHLORIDE label (version 7, 2026-01-14), p.10: \"other CNS depressants, including alcohol (e.g., non-benzodiazepine sedatives/hypnotics, anxiolytics, tranquilizers, muscle relaxants, general anesthetics, antipsychotics, gabapentinoids [gabapentin or pregabalin], and other opioids)\"",
+     "term": "CNS depressant"
+    }
+   ]
+  },
+  "rosuvastatin": {
+   "looked": "2026-11-16",
+   "ndc": "57237016805",
+   "pharm_class": [
+    "HMG-CoA Reductase Inhibitor [EPC]",
+    "Hydroxymethylglutaryl-CoA Reductase Inhibitors [MoA]"
+   ]
+  },
+  "sildenafil": {
+   "looked": "2026-11-16",
+   "ndc": "00904667104",
+   "pharm_class": [
+    "Phosphodiesterase 5 Inhibitor [EPC]",
+    "Phosphodiesterase 5 Inhibitors [MoA]"
+   ]
+  },
+  "tadalafil": {
+   "looked": "2026-11-16",
+   "ndc": "43547003003",
+   "pharm_class": [
+    "Phosphodiesterase 5 Inhibitor [EPC]",
+    "Phosphodiesterase 5 Inhibitors [MoA]"
+   ]
+  },
+  "tirzepatide": {
+   "looked": "2026-11-16",
+   "ndc": "00002015201",
+   "pharm_class": [
+    "G-Protein-linked Receptor Interactions [MoA]",
+    "GLP-1 Receptor Agonist [EPC]",
+    "Glucagon-like Peptide-1 (GLP-1) Agonists [MoA]",
+    "Glucose-dependent Insulinotropic Polypeptide Receptor Agonist [EPC]"
+   ]
+  },
+  "topiramate": {
+   "looked": "2026-11-16",
+   "ndc": "70710103903",
+   "pharm_class": [
+    "Cytochrome P450 2C19 Inhibitors [MoA]",
+    "Cytochrome P450 3A4 Inducers [MoA]",
+    "Decreased Central Nervous System Disorganized Electrical Activity [PE]"
+   ]
+  },
+  "triamcinolone": {
+   "looked": "2026-11-16",
+   "ndc": "33342032715",
+   "pharm_class": [
+    "Corticosteroid Hormone Receptor Agonists [MoA]",
+    "Corticosteroid [EPC]"
+   ]
+  },
+  "venlafaxine": {
+   "looked": "2026-11-16",
+   "ndc": "00093914701",
+   "pharm_class": [
+    "Norepinephrine Uptake Inhibitors [MoA]",
+    "Serotonin Uptake Inhibitors [MoA]",
+    "Serotonin and Norepinephrine Reuptake Inhibitor [EPC]"
+   ]
+  }
+ },
+ "note": "PROVISIONAL AND UNREVIEWED. How a label names a drug it does not name outright. 'drugs' holds openFDA's NDC directory pharm_class field for one package of each drug in corpus.json, written by `pharmacli docs classes`. 'aliases' maps one of those class names to other ways FDA labels write the same class or the wider class it belongs to; the key is the source of each alias. A drug may also carry hand-written 'terms', each with its own 'source'. Only a pharmacist can sign these off: do so by correcting the lists and setting 'reviewed' to true.",
+ "reviewed": false
+}

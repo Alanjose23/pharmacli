@@ -14,6 +14,8 @@ inventory CSV and tells you:
 - **which brands have a cheaper generic**: using the generic price NADAC already carries on brand rows
 - **which FDA recalls touch your shelf**
 - **what a package insert or a reimbursement rule says**, cited to the page. It refuses questions about a specific patient and questions its documents don't cover.
+- **what the labels say about one patient's drugs taken together**, for a signed-in pharmacist: every pair in a category with the label sentence behind it, the label sections that match the patient's readings, and recalls and cheaper generics for their drugs. Synthetic patients only (see [Patient profiles](#patient-profiles-pharmacist-sign-in-and-the-patient-view)).
+- **a patient's own page**: their medication list, each label's counseling section word for word, and recall notices.
 
 It also contains the course exercises it was built through: a CSV cleaner, a
 concurrency benchmark, a repricing model with an API, neural-network and NLP
@@ -31,14 +33,14 @@ Each extra adds features:
 
 | extra | needed for |
 |---|---|
-| *(core)* | `fetch`, `watch`, `check`, `today`, `margin`, `reorder`, `lookup`, `ask` (the 14 questions; find-a-drug matches words in the drug name), `claims`, `generics`, `recalls`, `clean`, `bench --workload io/cpu` |
+| *(core)* | `fetch`, `watch`, `check`, `today`, `margin`, `reorder`, `lookup`, `ask` (the 14 questions; find-a-drug matches words in the drug name), `claims`, `generics`, `recalls`, `clean`, `bench --workload io/cpu`, `patients account/mock/list`, `docs classes` |
 | `.[analysis]` | `forecast`, `nlp --task baseline`, `bench --workload numpy` |
 | `.[analysis,track]` | `sweep` (MLflow). `dvc` is a separate install (`pipx install dvc`), used by hand to version the database |
-| `.[serve]` | `chat`, and the API's document and health endpoints |
+| `.[serve]` | `chat`, the API's document and health endpoints, and the sign-in, pharmacist and patient pages |
 | `.[analysis,serve]` | the API's `/predict` as well (`.[analysis,serve,rag]` for the document endpoints). `docker compose up` installs all three itself |
 | `.[analysis,track,dl]` | `nn`. Install torch from the CPU index first: `pip install --index-url https://download.pytorch.org/whl/cpu torch` |
 | `.[analysis,nlp]` | `nlp --task finetune/search`, and matching by meaning in `ask "find a drug by description"` ("cholesterol pill" → Lipitor) |
-| `.[rag]` | `docs`, `interactions`, and document answers in `ask`. Also needs Chroma and Ollama (see below) |
+| `.[rag]` | `docs`, `interactions`, document answers in `ask`, and `patients report/warm` (a report quotes label PDFs). Also needs Chroma and Ollama (see below); the pair checks need only Ollama |
 | `.[notebook]` | the two notebooks in `notebooks/` — matplotlib, JupyterLab and shap. No module in `src/` imports them |
 
 ## Quick start
@@ -160,6 +162,37 @@ pharmacli claims check data/claims_sample.csv --payers data/payers.csv -o underp
 
 Replace both files with a real claims export and your contract fees.
 
+### 5. Patients (uploaded in the pharmacist page)
+
+**Synthetic patients only.** One row per patient, read **by header name**. `name`, `dob`
+and `drugs` are required; every other column may be left out or blank. The page offers
+the template (`/static/template.csv`), and `pharmacli patients mock -o FILE` writes 25
+generated patients in this format.
+
+| column | meaning | accepted |
+|---|---|---|
+| `name` | the patient's name | up to 120 characters |
+| `dob` | date of birth, `YYYY-MM-DD` | 1900-01-01 to today |
+| `drugs` | drug names separated by `;` | 1 to 30 names; a name with no label is kept and flagged |
+| `systolic`, `diastolic` | blood pressure, mmHg | 50–300 and 20–200, both or neither, diastolic below systolic |
+| `egfr` | mL/min/1.73 m² | 0–200 |
+| `crcl` | creatinine clearance, mL/min | 0–300 |
+| `alt`, `ast` | liver enzymes, U/L | 0–10,000 |
+| `potassium` | serum potassium, mmol/L | 1–10 |
+| `weight_kg` | kg | 0.5–500 |
+| `pregnant` | `yes` or `no` | |
+| `allergies` | free text | up to 500 characters |
+| `taken` | the date of these readings, `YYYY-MM-DD` | from the date of birth to today; blank means today |
+
+- The ranges are checks on data entry (a negative weight, a diastolic above the
+  systolic), not clinical thresholds. A row outside them is rejected and reported with
+  its line number and the reason; the other rows are stored.
+- A row whose name and date of birth match a patient already on file (ignoring case,
+  spacing and accents) adds its readings and any new drugs to that patient, and is
+  counted as *updated*, not *created*. Uploading the same file twice adds nothing.
+- Nothing is overwritten: a new value is a new reading, and the history keeps every one
+  with its date and who entered it.
+
 ### CSVs it writes
 
 | command | columns |
@@ -183,9 +216,9 @@ Replace both files with a real claims export and your contract fees.
 | `margin` | Every shelf drug: your cost, NADAC, gap per unit, break-even quantity (the units per script at which the dispensing fee stops covering the gap), $/month. `--top N`; `-o FILE` writes the appeal pack |
 | `reorder` | Order-by date (days of supply − `--lead-days` 2), quantity (one month, rounded up to whole packs when known), and whether to order early or wait for a likely price change. `--within 14`, `--as-of YYYY-MM-DD`, `--top 40` |
 | `lookup NDC` | Drug name, form, route, labeler and pack from openFDA, plus its newest NADAC price. `--history` adds every weekly price and a sparkline |
-| `ask "question"` | The 12 questions below, in plain English. `ask` alone lists them; `--ndc` / `--phrase` supply the drug |
+| `ask "question"` | The 14 questions below, in plain English. `ask` alone lists them. Name the drug in the question, by NDC or by name (`ask "what has lipitor's price done"`): a name picks the newest file's drugs that match the most of its words, your shelf's first, and your busiest NDC of that name; a name that fits several drugs lists them. `--ndc` / `--phrase` override the sentence |
 | `ask -o FILE.csv` | Every shelf drug's answers, one row each |
-| `chat` | `ask` in a browser at `127.0.0.1:8765` (`--port`, `--no-open`). Attach an inventory CSV to ask about that file instead of your saved shelf, then save it to the shelf if you want to keep it. Runs the API on localhost and opens the page with a token in the URL fragment; `--no-open` prints that URL to copy. Needs `.[serve]` |
+| `chat` | `ask` in a browser at `127.0.0.1:8765` (`--port`, `--no-open`). Attach an inventory CSV to ask about that file instead of your saved shelf, then save it to the shelf if you want to keep it. Every question is in the menu above the box; the ones about a drug wait in the box for you to name it. A drug answer offers the other drug questions about it as one-click follow-ups, and a label answer appears as it is written (it streams from `/ask/stream`). Runs the API on localhost and opens the page with a token in the URL fragment; `--no-open` prints that URL to copy. The link works for 12 hours. Needs `.[serve]` |
 
 The 14 `ask` questions: what am I losing money on · what should I order this week ·
 what capital is sitting dead · when do prices change next · what is on my shelf ·
@@ -212,7 +245,19 @@ in `cli.py`.
 | `claims check FILE.csv` | Claims paid below NADAC + fee and below your cost, totals by payer, `-o` CSV, and the `docs appeal` command for the NDC with the largest shortfall |
 | `generics` | Brand shelf drugs (`B`, `B-ANDA`) whose NADAC row carries a cheaper generic price, in $/month. A purchasing conversation, not a substitution |
 | `recalls` | FDA drug recalls reported in the last `--days` (90) that match a shelf NDC. A match on the labeler and product code counts every pack size. Recalls are lot-specific: check the lots |
-| `interactions DRUG DRUG…` | For 2–6 drugs, asks the documents about every pair and prints the answer with its label citations. Drugs with no label are listed as not checked. An answer with no interaction does not mean the drugs are safe together |
+| `interactions DRUG DRUG…` | For 2–6 drugs, asks the documents about every pair and prints the answer with its label citations. Drugs with no label are listed as not checked. An answer with no interaction does not mean the drugs are safe together. `--category` also sorts each pair into one of the four categories below, with the label sentence it rests on |
+
+### Patient profiles (synthetic patients only)
+
+| command | does |
+|---|---|
+| `patients account NAME` | Creates a pharmacist account. The password is typed at a prompt that does not echo, never passed as an argument; at least 12 characters, no other rules. There is no default account |
+| `patients mock` | Loads 25 generated patients (fixed seed, plainly fictional names, 2–6 labeled drugs each) through the same reader as an upload. `-o FILE` also writes the CSV. Running it again updates, never duplicates |
+| `patients list` | Patient ids, names, dates of birth and drug counts |
+| `patients report ID` | One patient's report as text, from the cache, and how long it took to build |
+| `patients warm` | Checks every pair the patients on file still need, one at a time, and stores each answer. Minutes to hours on a CPU: leave it running. Stop it whenever; it carries on where it stopped |
+| `docs classes` | Looks up each corpus drug's pharmacologic classes in openFDA's NDC directory and keeps them in `classes.json`. Only drugs not yet in the file are asked about |
+| `docs eval --pairs` | Scores the drug-pair answer key (`tests/pairs_qa.jsonl`): agreement, severe pairs placed milder (the target is none), and pairs sent to manual review |
 
 ### Documents: package inserts and reimbursement rules
 
@@ -316,6 +361,28 @@ variable, so no data and no secret is baked into a layer.
 | `POST /ask` | bearer | the whole answer as one JSON object: text, sources, refusal reason, per-stage timings, token counts |
 | `POST /ask/stream` | bearer | the same answer as server-sent events, a token at a time |
 | `pharmacli token` | — | mints an HS256 bearer token (`--sub`, `--ttl`). Must run with the same `PHARMACLI_JWT_SECRET` as the API |
+| `GET /login`, `/pharmacist`, `/patient` | open | the sign-in page and the two signed-in pages. Shells with no data in them, served with `Content-Security-Policy: default-src 'self'` |
+| `GET /static/{name}` | open | the token stylesheet (`theme.css`), the page scripts, and the patient upload template. A fixed table of files, not a folder |
+| `POST /auth/login` | open | `{username, password}` → a token carrying a role and a server-side session. An unknown name and a wrong password get the same answer; repeated failures lock the name for a while |
+| `POST /auth/logout`, `POST /auth/password` | signed in | ends the session; changes the password (a one-time password must be changed before anything else works) |
+| `GET /patients`, `POST /patients`, `POST /patients/upload`, `POST /patients/mock`, `GET /patients/questions` | pharmacist | the patient list (with the override counts), a patient entered by hand, a CSV upload, the mock patients, and the questions patients passed on |
+| `GET /patients/{pid}`, `POST …/readings`, `POST …/drugs`, `DELETE …/drugs/{drug}`, `GET …/report`, `POST …/decisions`, `POST …/login` | pharmacist | one profile with its history; a new reading; a drug added or stopped; the report; accept or override one item; create or reset the patient's login |
+| `GET /patients/me`, `…/me/counseling`, `…/me/recalls`, `POST …/me/ask`, `POST …/me/forward` | patient | the caller's own medication list, counseling text and recall notices; a label question; passing a question to the pharmacists. No id in these paths: the record is the one the session names |
+
+**Who may call what.** A token is one of three kinds:
+
+| token | from | works on |
+|---|---|---|
+| no role | `pharmacli token`, `pharmacli chat` | everything it worked on before (`/predict`, `/ask`, `/ask/stream`, `/chat/*`); refused (403) on every route under `/patients` |
+| `pharmacist` | signing in at `/login` | every route |
+| `patient` | signing in at `/login` | only the `/patients/me` routes; refused (403) on `/predict`, `/ask`, `/ask/stream`, every `/chat/*` route and every pharmacist route |
+
+Signing in records a session on the server, so signing out, the end of the session
+(`PHARMACLI_SESSION_HOURS`, 8 by default) and a reset password all end the token
+before its own expiry. Every route under `/patients` is on one of two routers, each
+with its role check as a dependency of the router, and that same check writes the audit
+row, allowed or denied. `tests/test_auth.py` walks the route table and fails if a route
+under the prefix is not behind its guard.
 
 ```bash
 TOKEN=$(docker compose exec -T api pharmacli token | tr -d '\r')
@@ -341,6 +408,18 @@ when it goes stale instead of letting the demo 503 in front of someone.
 `X-Request-ID` and in the body of every error. Send your own `X-Request-ID` and
 it is kept, so a trace survives a proxy. `docker compose logs -f api`.
 
+`path` is the route template (`/patients/{pid}/report`), not the URL, and `/metrics`
+groups by the same template, so a patient's id is in neither. No request body, name or
+date of birth is logged. Who opened or changed which patient is in the `audit` table of
+the patient database instead: who, role, action, patient id, request id, time, and
+whether it was allowed. That table cannot be updated or deleted from; a trigger aborts
+both.
+
+`/metrics` also carries `decisions` (how many report items pharmacists accepted and
+overrode) and `new_patient` (whether the first submit of the new-patient form was
+valid, and the seconds from first keystroke to save). Both are counts with nothing
+about a patient in them.
+
 **Load test.** `tests/loadtest.py` streams the 50 evaluation questions at the
 service at several concurrency levels and writes a latency report:
 
@@ -359,12 +438,254 @@ names the bottleneck from measurements rather than guesswork: see
 | `clean FILE --rule NAME[:key=value,…]` | Parses a NADAC-format CSV and applies rules in order (`--rule` repeats). `-o FILE`, `-n/--dryrun` |
 | `rules` / `columns` | Lists the rules / the 12 expected columns |
 
+## Patient profiles, pharmacist sign-in and the patient view
+
+**Synthetic patients only.** Storage, access control and audit logging here are not
+ready for protected health information under HIPAA, and nothing in this tool claims to
+be. Every patient it ships with is generated, and the pharmacist page says so on screen.
+
+```bash
+pip install -e ".[serve,rag]"
+pharmacli docs fetch                          # the label PDFs a report quotes (first run only)
+pharmacli patients account alice              # a pharmacist; type a password of 12+ characters
+pharmacli patients mock                       # 25 generated patients
+docker compose up -d --wait chroma ollama     # for pair categories and label questions
+uvicorn pharmacli.serve:app --port 8000       # then open http://127.0.0.1:8000/login
+```
+
+Sign in as `alice` and open a patient. To see the patient's side, open "give the
+patient a login" on a profile, pick a username, and hand over the one-time password
+it shows; sign out, sign in with it, choose a new password, and the patient's own page
+opens.
+
+### What a pharmacist sees
+
+A bar at the top of the page adds a patient by hand, by keyboard alone: name, date of
+birth, drugs (Enter after each), and optional indicators. A drug name with no label is
+flagged as it is typed and saved as flagged. The same name and date of birth as a
+patient on file, whatever the case, spacing or accents, has to be confirmed as a second
+person; the server makes that check, not only the page.
+
+Opening a patient shows the drugs with the label each matched, the current indicators,
+the history of every reading with who entered it, and a report:
+
+- **Every pair of the patient's drugs, in a category** taken from what the two labels
+  say, most severe first: *Do not use together*, *Avoid or adjust the dose*, *Monitor*,
+  *No interaction stated in the labels* (which is not the same as safe). Three statuses
+  are not categories: *Needs manual review* (a check failed; listed above everything),
+  *Not checked* (a drug has no label) and *Pending* (not run yet). The report says
+  "N of M pairs checked" and names the rest.
+- **Label sections matched to the patient's readings**, quoted with their pages and
+  with the patient's value beside them. No model is involved.
+- **Shelf checks for the patient's drugs**: a cheaper generic, citing the NADAC file,
+  and FDA recalls, citing the recall number.
+- **Accept or override** on every item, with an optional reason. Decisions are kept
+  append-only, and the page header shows how many were overridden.
+
+### How a pair gets its category
+
+1. **Search both labels, in plain text.** For drugs A and B, A's labels are searched
+   for B and B's for A: Contraindications, the boxed warning, Drug Interactions,
+   Warnings and Precautions, and Dosage and Administration (where dose adjustments
+   sit). The 14 labels in the older format have no numbered sections and are searched
+   whole. The search looks for the other drug's names and for its pharmacologic class
+   as labels write it ("strong CYP3A4 inducers", "ACE inhibitors"), from `classes.json`.
+2. **Nothing found in either label** is the only way to reach *No interaction stated in
+   the labels*. No model is asked; the citation lists the sections and pages searched.
+3. **Otherwise the model gets a small job.** It sees up to 8 numbered sentences per
+   label (those naming the drug before those naming only its class) and answers with a
+   sentence number and one category. Code copies that sentence out of the label, so
+   the quote on screen is the label's own words, with document · section · page ·
+   label date.
+4. **The answer is checked before it is shown.** Any of these sends the pair to *Needs
+   manual review*, with the sentences that were found still shown and cited: an answer
+   that is not one of the categories; a sentence number the model was not given; a
+   sentence that does not name the other drug or its class; "no interaction" where the
+   search found a mention; "do not use together" resting on a sentence that does not
+   say so; a category milder than the words of the sentence it rests on, or of any
+   sentence naming the drug; and a drug with no class on file when nothing else was
+   found. Nothing is ever moved to a milder category.
+5. **The more severe of the two labels' readings stands.**
+
+A pair's answer is about two labels, so it is cached under both label versions, the
+prompt version and the model, and reused for every patient. The queue is not a table:
+it is every pair some patient needs minus what is cached, so it resumes by itself after
+an interruption and a label refreshed by `docs refresh` puts its pairs back in. The API
+checks queued pairs one at a time in the background and stands aside while a live
+question is being answered; `pharmacli patients warm` does the same from the terminal.
+
+`classes.json`, the indicator triggers in `review.py` and the pair answer key are
+**provisional and unreviewed**: each entry names its source, and only a pharmacist can
+sign them off.
+
+| reading | brings up | when | source |
+|---|---|---|---|
+| eGFR | the label's renal impairment sections | below 60 mL/min/1.73 m² | KDIGO 2024 CKD guideline: GFR categories G3a to G5 |
+| creatinine clearance | the same | below 60 mL/min | FDA guidance, Pharmacokinetics in Patients with Impaired Renal Function (March 2024), Table 1 |
+| ALT, AST | the label's hepatic impairment sections | above 40 U/L | ABIM Laboratory Test Reference Ranges (January 2025) |
+| pregnant: yes | section 8.1 | | 21 CFR 201.57(c)(9)(i) |
+
+A trigger only chooses what to show; the guidance is the label's words. Blood pressure,
+potassium, weight and allergies are recorded and displayed and trigger nothing, and
+allergies are not checked against drugs.
+
+### What a patient sees
+
+Their medication list; section 17 of each drug's label, word for word with its pages,
+from the function `docs handout` uses; and FDA recall notices for their drugs. No
+indicators, no categories, no recommendations.
+
+A patient can ask what a label says. The answer is label text as retrieved, quoted with
+its citation; nothing is generated. A question is answered only if it is recognisably a
+general question about a label: it names a drug that has one, and every other word is
+on a short list that has no "I", "my" or "me" and no "can", "should" or "safe". So
+"can I…", "should I…", "is it safe for me…" and "I missed a dose" are refused before
+anything is retrieved, by a rule that does not depend on the model, and so is anything
+else the rule does not recognise. The refusal points to the counseling text on the page
+and offers to send the question to the pharmacists, who see it in a queue.
+
+### Profiles beside a chat that refuses patient questions
+
+The chat still refuses any question about a specific patient, exactly as before.
+Profiles do not relax that rule; they go around the model. Nothing from a profile is
+ever put into a prompt: a pair check asks the model about two labels, the label
+sections matched to a reading are chosen by a table in code and quoted, and the shelf
+checks are lookups. The patient's data selects which label text to show, a pharmacist
+reads it, and the decision stays with the pharmacist. The model is still never asked
+to decide anything about a person.
+
+### Measured
+
+On this laptop's CPU, with `qwen2.5:3b-instruct`, on the unreviewed 18-pair key
+(`pharmacli docs eval --pairs`). These are provisional: the key has not been reviewed
+by a pharmacist, and the prompt was revised while looking at five of its pairs.
+
+| | result |
+|---|---|
+| Agreement with the key | 8 of 18. The 4 "nothing stated" rows agree by construction (the same search wrote the key); of the 14 pairs where a label says something, 4 agree |
+| Severe pairs placed in a milder category | 0 of 10 (the target is none) |
+| Pairs sent to manual review | 10 of 18. This is what the checks cost: the 3B model's first answer was "do not use together" for nearly everything, and the checks turn its wrong answers into manual review instead of showing them |
+| Pairs shown in a wrong category | 0 |
+| Pairs settled by the text search alone | 687 of the 990 possible pairs among the 45 drugs have no sentence in either label, found in 12 s with no model call. The other 303 need the model |
+| A cached report for a six-drug patient (15 pairs) | 0.7 s (`pharmacli patients report ID`) |
+| Patient-phrased questions refused by the gate | 23 of 23 (`tests/rag_qa.jsonl`, rows with `"gate": "patient"`) |
+| Lighthouse accessibility | 100 on the chat, sign-in, pharmacist and patient pages |
+| Width | no sideways scroll at 375 px on any of the four pages |
+
+### Limits
+
+- **Synthetic patients only**, and one pharmacy: any pharmacist can open any patient.
+- **Most pairs where a label says something end in manual review** with this model.
+  The category is right when it is shown; it is often not shown.
+- **Label text comes out of PDFs.** A table is flattened into running text, so a quote
+  from one can read oddly and carry a stray word from the next cell. The page number is
+  there to check it.
+- **A drug is matched by the first word of its generic name.** "losartan" matches the
+  losartan and hydrochlorothiazide label, which is the only losartan label in the
+  corpus; the page shows which label each drug matched.
+- **Recalls are matched on the package codes of the labels in the corpus.** A recall of
+  another manufacturer's version of the same drug is not matched.
+- **The patient gate is strict.** A general question that uses a word outside its list
+  ("can gabapentin be crushed") is refused and offered to the pharmacists.
+- **Forwarded questions are listed, not managed**: there is no way yet to mark one answered.
+- **Sign-in is for localhost.** Tokens are bearer tokens in `sessionStorage`; there is
+  no password recovery beyond a pharmacist resetting a patient's login, and a
+  pharmacist's password is changed by signing in and posting to `/auth/password`.
+
+### The four improvements, as measured
+
+**1. Green and white**
+
+| Metric | Before | Target | Now |
+|---|---|---|---|
+| Text contrast (WCAG AA) | grey `#8A8A8A` at 3.45:1 | every text colour at least 4.5:1 | lowest text pair 4.79:1 (green on the tint); borders 4.62:1 against a 3:1 need (`tests/test_theme.py`) |
+| Theme in one place | 14 hex colours inline | defined once | 9 tokens in `theme.css`; no hex colour in any page or script (same test) |
+| Page weight | 11 KB | under 30 KB | chat 16.9 KB with its stylesheet; sign-in 10.8, pharmacist 28.2, patient 13.6 KB against 60 KB each; no other-origin URL |
+| Phone layout | not tested | usable at 375 px | no sideways scroll at 375 px (headless Chrome) |
+| Lighthouse accessibility | not measured | 90 or higher | 100 |
+
+**2. Pharmacist sign-in, profiles and reports**
+
+| Metric | Before | Target | Now |
+|---|---|---|---|
+| Accounts | anyone with a token | named pharmacists, salted hashes | `patients account`; scrypt with a 16-byte salt per account, N=2^17, r=8, p=1 |
+| Roles | none | checked on every patient endpoint | `pharmacist` or `patient`, from the server-side session |
+| Access-control tests | missing or expired token → 401 | no token, expired, wrong role on every patient endpoint | generated from the route table for every route: no token, a malformed one, expired, signed out, no session, no role, wrong role |
+| Audit trail | a log line per request | who and request id for every read or change | append-only `audit` table, allowed and denied |
+| Session length | 1 hour, or 12 for the chat link | one shift, with sign-out | 8 hours (`PHARMACLI_SESSION_HOURS`), `POST /auth/logout` |
+| Mock patients | none | 25 from a fixed seed, every drug labeled | 25; the same seed gives the same bytes |
+| Upload validation | inventory reader | every rejected row with line and reason | yes |
+| Indicator history | — | every update kept with date and who | append-only by trigger |
+| Patient data in logs | no bodies logged | none in logs or `/metrics`, by a test | canary test: name, date of birth and id absent from both |
+| Category accuracy | — | 90% agreement with a pharmacist-labeled key | **not measured**: needs a pharmacist's key. Provisional: 8 of 18 on the unreviewed key |
+| Missed severe interactions | — | none | 0 of 10 placed milder (provisional, same key) |
+| Cited recommendations | uncited answers withheld | every one cites a label page | every category, section, generic and recall carries its source; what cannot be cited is manual review |
+| Coverage | "not checked" listed | pairs checked out of total | "N of M pairs checked", with the pending and unchecked named |
+| Time to a report, 6 drugs | 10 to 20 minutes | under 1 minute cached | 0.7 s cached (measured on one mock patient) |
+| Pharmacist decisions | — | accepted or overridden, rate tracked | every item; counts on the page and in `/metrics`. The rate in real use is **not measured** |
+
+**3. The new-patient bar**
+
+| Metric | Target | Now |
+|---|---|---|
+| Time to add a patient | under 2 minutes | **not measured**: needs people. `/metrics` → `new_patient.seconds` records it per save |
+| Valid on first submit | at least 90% | **not measured**: `/metrics` → `new_patient.first_submit_valid` / `first_submit_invalid` |
+| Duplicate patients | flagged before saving, in every test case | case, spacing and accent variants all refused until confirmed (`tests/test_entry.py`) |
+| Unmatched drug names | flagged at entry, none unflagged in a report | flagged as typed, saved as flagged, reported as "not checked" |
+| Keyboard-only entry | the whole form | completed in headless Chrome with key presses only |
+
+**4. Patient sign-in**
+
+| Metric | Target | Now |
+|---|---|---|
+| Records a patient can see | only their own | their routes take no id; every pharmacist route answers another patient's id exactly as an id that does not exist (403) |
+| Patient-specific questions refused | all, on an extended key | 23 of 23 patient-phrased rows refused by the gate; the chat's own 5 refusal rows are unchanged |
+| Task completion | 90% in a usability test | **not measured**: see the script below |
+| Counseling text | section 17 word for word | the same function as `docs handout`, per drug |
+
+## Usability session script
+
+One page, for a session with a pharmacist and one or two people playing patients.
+Use the mock patients. Enter nobody real.
+
+**Before.** `pharmacli patients mock`, `pharmacli patients warm` the night before, and
+the service running. Create one pharmacist account. For each participant playing a
+patient, open a mock patient, create a login and write the one-time password on a card.
+Note the numbers under `new_patient` at `/metrics`.
+
+**Part A: three patient tasks.** Hand over the card and say only: "This is your
+pharmacy's page. Sign in." Then ask, one at a time, without pointing at the screen:
+
+1. "Which medicines does the pharmacy have on file for you?"
+2. "Find what the label for one of your medicines says you should be told about it."
+3. "Is there a recall on any of your medicines?"
+
+For each task write down: done without help, done with a hint, or not done; and the
+first thing they clicked. A task counts as completed only without help. Afterwards ask
+them to type one question they would really ask. Write down the question and whether it
+was answered, refused, or sent on. The target is 90% of tasks completed.
+
+**Part B: adding a patient by hand.** Give the pharmacist a card with a made-up name, a
+date of birth, three drugs (one of them not in the corpus) and a blood pressure. Say:
+"Add this patient. Use the keyboard only." Do not explain the form. Write down whether
+the unmatched drug's flag was noticed, and whether anything had to be asked. Repeat with
+a second card that has the same name and date of birth as the first, in different
+capitals.
+
+**After.** Read `/metrics` again. `new_patient.seconds` gives the time from first
+keystroke to save (target: under 2 minutes) and `first_submit_valid` against
+`first_submit_invalid` gives the share valid on the first submit (target: 90%).
+`decisions` gives the override count if the pharmacist also worked through a report.
+
 ## Where the data lives
 
 | path | what it holds | written by |
 |---|---|---|
 | `pharmacli.db` | SQLite. `nadac`: one row per NDC × effective date × weekly file (price, pricing unit, rate class, OTC, generic price, explanation code). `watch`: your shelf (ndc, cost, on_hand, monthly). `package`: openFDA pack sizes | `fetch`, `watch`, `watch packs` |
 | `pharmacli.db.dvc` | DVC pointer to a snapshot of the database; `dvc checkout` restores it from the local DVC cache (no remote is configured). DVC is not a project dependency: install it yourself to use these files | `dvc add` |
+| `patients.db` (`PHARMACLI_PATIENT_DB`) | SQLite, **synthetic patients only**. `patient`, `drug`, `reading` (indicator history), `account`, `session`, `attempt` (failed sign-ins), `audit`, `pair` (cached label-pair answers; no patient in them), `decision`, `question`. `audit`, `reading` and `decision` are append-only by trigger. Git-ignored, in `.dvcignore` and `.dockerignore`; under compose it lives on the `patient-data` volume, not in `./data` | `patients account`, `patients mock`, the pharmacist page |
+| `classes.json` | For each corpus drug, openFDA's pharmacologic classes, plus the other ways labels write those classes. **Provisional and unreviewed**; every entry names its source | `docs classes`, and by hand |
+| `tests/pairs_qa.jsonl` | The drug-pair answer key: 18 pairs, each expected category tied to a label passage (document, page, quote). Unreviewed | by hand, from the label text |
 | `corpus.json` | The document list: label set IDs, versions, label dates and NDCs; reimbursement document URLs and SHA-256 | `docs fetch --from-shelf`, `docs refresh` |
 | `data/docs/` | The downloaded PDFs | `docs fetch`, `docs refresh` |
 | `data/qa-src/` | Page-by-page text of each PDF, used to write the answer key. No command reads it | — |
@@ -412,6 +733,11 @@ All code is in `src/pharmacli/`.
 | `rag.py` | PDF parsing, both chunkers, Chroma and Ollama over HTTP, retrieval, refusals, citations, appeal drafting |
 | `rageval.py` | Scores the answer key and compares two runs |
 | `safety.py` | Recall matching, label change digest, counseling handout, interactions |
+| `patients.py` | The patient database: schema and append-only triggers, scrypt password hashes, sign-in with lockout, sessions, the audit trail, profile validation, the upload reader, the mock-patient generator, decisions. Standard library only |
+| `review.py` | What a pharmacist reviews: which label a typed drug means, the sentences in each label that name the other drug or its class, the model's category with the checks on it, the cache and the queue derived from it, indicator triggers, per-patient shelf checks, the report, and the gate on a patient's question |
+| `theme.css` | The colour tokens (the only place a colour is written) and the shared layout rules |
+| `login.html`, `pharmacist.html`, `patient.html` | The sign-in page and the two signed-in pages: markup only, no inline script or style |
+| `app.js`, `pharmacist.js`, `patient.js` | The shared helper (token in `sessionStorage`, sent in the `Authorization` header; every dynamic value inserted as text) with the sign-in logic, and each page's own script. The patient page loads no pharmacist code |
 
 `tests/` holds the pytest suite: `pip install -e ".[analysis,serve,rag]"` then `pytest -q`.
 `tests/loadtest.py` and `tests/make_demo.py` are not part of it — the first needs the
@@ -419,10 +745,12 @@ service running (see **The service**), the second regenerates the committed demo
 
 Lint with `ruff check src tests` (`pip install ruff`; the rules are in `pyproject.toml`)
 and types with `mypy src/pharmacli`. CI runs the suite on 3.10/3.11/3.12, lints once,
-and builds the image and curls its `/health` to prove the container still starts.
+and builds the image, curls its `/health` to prove the container still starts, and
+requests every page, the stylesheet and each script from it (a static file left out of
+the package data works from a checkout and is missing from the image).
 
 Outside `src/`: `Dockerfile` (two stages, the runtime copies only the built venv),
-`docker-compose.yml` (api + Chroma + Ollama) and `.dockerignore` (without it the build
+`docker-compose.yml` (api + Chroma + Ollama, and a `patient-data` volume for the patient database) and `.dockerignore` (without it the build
 context is 1.5GB of data that must not reach the image).
 
 ## Settings
@@ -445,6 +773,11 @@ Read from `.env` or the environment; an environment variable overrides the file.
 | `PHARMACLI_K` | `3` | chunks retrieved per question |
 | `PHARMACLI_RELEVANCE_FLOOR` | `0.35` | below this similarity a question is refused |
 | `PHARMACLI_JWT_SECRET` | *(none)* | signs the API's bearer tokens. Unset, the API generates a per-process one and logs a warning: the endpoints stay closed, but `pharmacli token` in another shell will not verify |
+| `PHARMACLI_PATIENT_DB` | `patients.db` | patient profiles, accounts and the audit trail: a SQLite file of its own, never the price panel. Synthetic patients only |
+| `PHARMACLI_SCRYPT_N` | `131072` | scrypt cost N for password hashes, at r=8 and p=1 (2^17, the OWASP minimum) |
+| `PHARMACLI_SESSION_HOURS` | `8` | how long a sign-in lasts: one working shift |
+| `PHARMACLI_LOCK_AFTER` | `5` | wrong passwords for one name, inside the window below, before sign-in is locked for that name |
+| `PHARMACLI_LOCK_MINUTES` | `15` | the window, and how long the lock lasts |
 
 ## Commands that delete or overwrite data
 
@@ -455,12 +788,23 @@ Read from `.env` or the environment; an environment variable overrides the file.
 - `claims sample` overwrites `data/claims_sample.csv` and `data/payers.csv` (or the `-o`/`--payers` paths).
 - `docs fetch --from-shelf` overwrites `corpus.json`; `docs refresh` rewrites it and replaces PDFs.
 - `sweep` without `--sample` replaces `models/pharmacli-mover.joblib` and `.json`.
+- `docs classes` rewrites `classes.json`, keeping what is in it and adding drugs it has not looked up.
+- Nothing in the patient database is overwritten by the tool: readings, decisions and
+  audit rows are append-only, and a stopped drug is kept. Deleting `patients.db` deletes
+  every profile, account and audit row.
 
 ## What it can't answer
 
 - **A future price.** It gives the odds that a price moves and when; it never predicts a price.
 - **A clinical decision.** It quotes what a label says, with the page, and refuses
   questions about a specific patient. Its labels are the versions in `corpus.json`.
+  A patient's report sorts label sentences into categories and puts label sections
+  beside the patient's readings; a pharmacist accepts or overrides each one.
+- **Whether two drugs are safe together.** "No interaction stated in the labels" says
+  what two documents contain, which is not the same as safe, and the tool's own wording
+  never calls anything safe.
+- **Anything about a real patient.** The profiles are synthetic; the storage, access
+  control and audit logging are not ready for protected health information under HIPAA.
 - **Whether an appeal will win.** NADAC is a survey of what pharmacies paid; your PBM
   contract terms and appeal windows aren't in the data.
 - **Anything newer than the last `fetch`**, and drug shortages at all.

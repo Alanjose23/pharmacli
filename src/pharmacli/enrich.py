@@ -86,6 +86,9 @@ def lookup(ndc: str, timeout: int | None = None) -> dict | None:
                     "n_ingredients": len(item.get("active_ingredients", []) or []),
                     "pack_desc": match.get("description", ""),
                     "pack_size": packsize(match.get("description", "")),
+                    # e.g. "Opioid Agonist [EPC]": how labels name a drug they
+                    # do not name outright. docs.classes() keeps these on file.
+                    "pharm_class": item.get("pharm_class") or [],
                 }
     return None
 

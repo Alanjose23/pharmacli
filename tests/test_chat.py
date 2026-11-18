@@ -85,3 +85,26 @@ def tanoversizedfileisrefusedbeforeitisread(chat):
     up = chat.post("/chat/upload", content=big, headers={"X-Filename": "big.csv"}).json()
     assert "larger than" in up["error"]
     assert "held" not in serve.UPLOAD
+
+
+def tpromptssaywhichquestionswaitforadrug(chat):
+    fill = {c["q"]: c["fill"] for c in chat.get("/chat/prompts").json()}
+    assert fill["what is this drug"] is True
+    assert fill["find a drug by description"] is True
+    assert fill["what am I losing money on"] is False
+
+
+def tadocumentquestionishandedtothestream(chat, monkeypatch):
+    from pharmacli import ask, serve
+
+    # a label answer takes a minute on a CPU; the page streams it from
+    # /ask/stream instead of waiting on this request. Lifespan's S.clear() undoes this.
+    serve.S["rag"] = object()
+    monkeypatch.setattr(ask, "_documents", lambda q: pytest.fail("answered in-line"))
+    d = chat.get("/chat/ask", params={"q": "what are the boxed warnings on carbamazepine"}).json()
+    assert d["stream"] is True and d["label"] == "documents"
+
+
+def tadruganswercarriesitsfollowups(chat):
+    d = chat.get("/chat/ask", params={"q": "what is this drug 00000000001"}).json()
+    assert "will this drug's price move 00000000001" in {c["q"] for c in d["chips"]}

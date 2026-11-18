@@ -217,7 +217,8 @@ def buildparse() -> argparse.ArgumentParser:
     # week 9: the documents behind `ask`'s documents lane. Shaped like `watch`:
     # one command, an action, and the flags each action reads.
     dcs = commands.add_parser("docs", parents=[verbosity],
-                              help="the RAG corpus: fetch, ingest, refresh, eval, appeal, handout")
+                              help="the RAG corpus: fetch, ingest, refresh, eval, appeal, "
+                                   "handout, classes")
     # late, so cli can import this module: by the time buildparse runs, cli is
     # fully imported. One table, no mirrored copy to keep in step.
     from pharmacli.cli import DOCS
@@ -228,6 +229,9 @@ def buildparse() -> argparse.ArgumentParser:
     dcs.add_argument("--from-shelf", type=int, default=None, metavar="N",
                      help="fetch: rebuild corpus.json from the N highest-spend shelf drugs")
     dcs.add_argument("--qa", default="tests/rag_qa.jsonl", help="eval: the answer key")
+    dcs.add_argument("--pairs", nargs="?", const="tests/pairs_qa.jsonl", default=None,
+                     metavar="FILE", help="eval: score the drug-pair answer key instead "
+                                          "(tests/pairs_qa.jsonl)")
     dcs.add_argument("--chunking", choices=("fixed", "section"), default=None)
     dcs.add_argument("--k", type=int, default=None, help="passages retrieved per question")
     dcs.add_argument("--retrieval-only", action="store_true",
@@ -268,6 +272,9 @@ def buildparse() -> argparse.ArgumentParser:
     inter = commands.add_parser("interactions", parents=[verbosity],
                                 help="what the labels say about 2-6 drugs taken together")
     inter.add_argument("drugs", nargs="+", help="drug names or NDCs")
+    inter.add_argument("--category", action="store_true",
+                       help="also sort each pair into a category, with the label sentence "
+                            "it rests on")
 
     bench = commands.add_parser("bench", parents=[verbosity],help="time the concurrency models")
     bench.add_argument("--workload", default="both", choices=("io", "cpu", "numpy", "both"),
@@ -281,6 +288,18 @@ def buildparse() -> argparse.ArgumentParser:
                               help="mint a bearer token for the API")
     tok.add_argument("--sub", default="cli", help="who the token is for; it lands in the logs")
     tok.add_argument("--ttl", type=int, default=3600, help="seconds until it expires")
+
+    # Patient profiles and the accounts that open them, in their own database
+    # (PHARMACLI_PATIENT_DB). Shaped like `watch` and `docs`: one command, an
+    # action. Late import for the same reason as DOCS above.
+    from pharmacli.cli import PATIENTS
+    pts = commands.add_parser("patients", parents=[verbosity],
+                              help="synthetic patient profiles: " + ", ".join(sorted(PATIENTS)))
+    pts.add_argument("action", choices=sorted(PATIENTS))
+    pts.add_argument("target", nargs="?", default=None,
+                     help="account: the pharmacist's username; report: the patient id")
+    pts.add_argument("-o", "--out", default=None, metavar="FILE",
+                     help="mock: also write the generated CSV here")
 
     parser.add_argument("-v", "--verbose", action="store_true", help="debug logging")
 

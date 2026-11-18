@@ -1,0 +1,98 @@
+/* The one place a colour is written. Every page links this file, and
+   tests/test_theme.py fails on a hex value anywhere else. The same test reads
+   these tokens and checks each text-on-surface pair against WCAG AA, so a
+   value can change here as long as that test still passes. */
+:root{
+  --surface:#FFFFFF;       /* page and cards */
+  --surface-tint:#F0FDF4;  /* assistant messages, selected rows */
+  --green:#15803D;         /* primary buttons, links, focus rings */
+  --green-strong:#166534;  /* hover and pressed states, headings */
+  --ink:#111827;           /* body text */
+  --ink-muted:#4B5563;     /* secondary text */
+  --line:#6B7280;          /* input borders: 3:1 is what a border needs */
+  --danger:#B91C1C;        /* errors, the most severe category */
+  --caution:#92400E;       /* warnings, the middle categories */
+}
+
+*{box-sizing:border-box}
+/* `hidden` must win over any display rule below */
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+/* the system font: nothing may be downloaded */
+body{margin:0;font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+     color:var(--ink);background:var(--surface)}
+h1,h2,h3{color:var(--green-strong);line-height:1.25;margin:0 0 8px}
+h1{font-size:1.25rem}
+h2{font-size:1.125rem}
+h3{font-size:1rem}
+p{margin:0 0 8px}
+a{color:var(--green)}
+:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+
+button,input,select,textarea{font:inherit;color:inherit}
+input,select,textarea{border:1px solid var(--line);border-radius:6px;padding:8px 10px;
+                      background:var(--surface);max-width:100%}
+::placeholder{color:var(--ink-muted);opacity:1}
+button{border:1px solid var(--line);border-radius:6px;padding:8px 12px;
+       background:var(--surface);cursor:pointer}
+button:hover:enabled{border-color:var(--green);background:var(--surface-tint)}
+/* white on green is the only text a dark surface carries */
+button.primary{background:var(--green);border-color:var(--green);color:var(--surface)}
+button.primary:hover:enabled{background:var(--green-strong);border-color:var(--green-strong);
+                             color:var(--surface)}
+button:disabled{cursor:default;border-style:dashed}
+
+.muted{color:var(--ink-muted)}
+.error{color:var(--danger)}
+/* read by a screen reader, not drawn */
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+}
+
+/* ── the signed-in pages: no inline style is allowed there, so their layout lives here ── */
+.page{max-width:1100px;margin:0 auto;padding:16px}
+.narrow{max-width:420px;margin:8vh auto;padding:0 16px}
+.top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;
+     margin-bottom:12px}
+.card{border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:16px}
+/* the standing notice: words first, the rule down the side only underlines them */
+.notice{border-left:4px solid var(--caution);padding:8px 12px;margin:0 0 16px;color:var(--caution)}
+.stack label{display:block;font-weight:600;margin:12px 0 4px}
+.stack input,.stack select,.stack textarea{display:block;width:100%}
+.stack button{margin-top:16px}
+.plain{list-style:none;margin:0;padding:0}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:16px;align-items:start}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:end;margin-bottom:8px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:4px 12px}
+li.row{align-items:center}
+/* a label that wraps must not push its input out of line with its neighbours */
+.field{display:flex;flex-direction:column;justify-content:end}
+.field label{display:block;font-size:.875rem;font-weight:600;margin-bottom:2px}
+.field input,.field select{width:100%}
+.field .error{font-size:.875rem;margin:2px 0 0;min-height:0}
+[aria-invalid=true]{border-color:var(--danger)}
+/* a patient in the list: the selected one takes the tint and says so in words to a screen reader */
+.pick{display:block;width:100%;text-align:left;border-width:0 0 1px;border-radius:0}
+.pick[aria-current=true]{background:var(--surface-tint);font-weight:600}
+.flag{color:var(--caution)}
+table{border-collapse:collapse;width:100%;margin-bottom:12px}
+th,td{text-align:left;vertical-align:top;padding:4px 8px 4px 0;overflow-wrap:anywhere}
+th{color:var(--ink-muted);font-size:.875rem}
+h3{margin-top:16px}
+h4{margin:0 0 4px;font-size:1rem}
+summary{cursor:pointer;margin:8px 0;color:var(--green-strong)}
+/* one item of a report: its words first, the label's own text set apart on the tint */
+.item{border-top:1px solid var(--line);padding:12px 0}
+blockquote{margin:8px 0;padding:8px 12px;border-radius:6px;background:var(--surface-tint);
+           overflow-wrap:anywhere}
+cite{display:block;font-style:normal;font-size:.875rem;margin-top:4px;color:var(--ink-muted)}
+/* severity is said in words and by order; these only repeat it */
+.sev-high{color:var(--danger)}
+.sev-mid{color:var(--caution)}
+/* label text shown to a patient: the label's line breaks kept, in the page's own font */
+.label-text{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:8px 0;padding:12px;
+            border-radius:6px;background:var(--surface-tint)}
+@media (max-width:800px){.cols{grid-template-columns:minmax(0,1fr)}}
+.wide{flex:1;min-width:200px}

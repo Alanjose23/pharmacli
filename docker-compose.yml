@@ -15,12 +15,16 @@ services:
       PHARMACLI_OLLAMA_URL: http://ollama:11434
       PHARMACLI_LLM: ${PHARMACLI_LLM:-qwen2.5:3b-instruct}
       PHARMACLI_EMBED: ${PHARMACLI_EMBED:-all-minilm:l6-v2}
+      # patient profiles, accounts and the audit trail, on a volume of their
+      # own: not in the image, not in ./data beside the price panel
+      PHARMACLI_PATIENT_DB: /app/patients/patients.db
       # no default and no secret in the image: compose refuses to start without it
       PHARMACLI_JWT_SECRET: ${PHARMACLI_JWT_SECRET:?run  echo "PHARMACLI_JWT_SECRET=$(openssl rand -hex 32)" >> .env}
     volumes:
       # the PDFs `docs fetch` downloads, kept on the host so a rebuild does not
       # re-download 56 files
       - ./data:/app/data
+      - patient-data:/app/patients
       # the REAL panel and model, for predictions that mean something. Both are
       # gitignored, so a clean checkout has neither and /predict answers from
       # the demo fixture instead; uncomment once `fetch` and `sweep` have run,
@@ -69,3 +73,4 @@ services:
 volumes:
   chroma-data:
   ollama-models:
+  patient-data:

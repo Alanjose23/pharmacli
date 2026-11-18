@@ -6,7 +6,7 @@ import json
 import math
 import re
 
-from pharmacli import ask, rag
+from pharmacli import ask, rag, review
 
 # sentence-to-source similarity at which a sentence counts as supported
 FAITHFUL = 0.5
@@ -66,6 +66,13 @@ async def run(r: rag.Rag, rows: list[dict], chunking: str, k: int,
               retrieval_only: bool) -> dict:
     out = []
     for row in rows:
+        if row.get("gate") == "patient":
+            # A question phrased the way a patient asks it. Patients do not
+            # reach the chat: the patient view's gate is what must refuse these,
+            # and it needs no model, so it is scored here and now.
+            out.append({"id": row["id"], "expect": "refuse", "gate": "patient",
+                        "refused": not review.general_label_question(row["q"], r.corpus)})
+            continue
         res: dict = {"id": row["id"], "expect": row["expect_lane"], "lane": ask.lane(row["q"])}
         if _stale(r.corpus, row):
             out.append(res | {"stale": True})
@@ -103,6 +110,9 @@ def _pct(xs: list[float], q: float) -> float | None:
 
 
 def summarize(rows: list[dict]) -> dict:
+    asked = [r for r in rows if r.get("gate") == "patient"]
+    # the chat's own numbers are over the chat's own rows, as before
+    rows = [r for r in rows if r.get("gate") != "patient"]
     live = [r for r in rows if not r.get("stale")]
     ans = [r for r in live if r["expect"] == "documents"]
     ref = [r for r in live if r["expect"] == "refuse"]
@@ -125,12 +135,15 @@ def summarize(rows: list[dict]) -> dict:
               if ans else 0.0,
               "p50_ms": _pct(times, 0.5), "p95_ms": _pct(times, 0.95),
               "errors": sum(bool(r.get("error")) for r in live)}
+    if asked:
+        s |= {"patient_rows": len(asked), "patient_refused": sum(r["refused"] for r in asked)}
     return s
 
 
 # which count each x/n metric is out of
 DENOMINATOR = {"routing": "rows", "hit": "answerable", "refused_correctly": "refuse_rows",
-               "false_refusals": "answerable", "grounded": "answerable"}
+               "false_refusals": "answerable", "grounded": "answerable",
+               "patient_refused": "patient_rows"}
 
 
 def _ok(r: dict) -> bool:
@@ -171,3 +184,46 @@ def compare(a: dict, b: dict) -> list[str]:
     if lost:
         out.append(f"  now wrong: {', '.join(lost)}")
     return out
+
+
+# ── the pair answer key ──────────────────────────────────────────────────────
+# Each row names two drugs and the category their labels support, with the
+# passage it was taken from. Three numbers come out, and the middle one is the
+# one that matters most: a severe pair must never land in a milder category.
+
+async def run_pairs(r: rag.Rag, rows: list[dict], labels: review.Labels) -> dict:
+    known = review.drugs(labels.corpus)
+    versions = {e["doc_id"]: e["version"] for e in labels.corpus["inserts"]}
+    out = []
+    for row in rows:
+        a, b = known.get(row["a"]), known.get(row["b"])
+        # a key row is only as good as the label versions it was read from
+        if not a or not b or any(versions.get(d) != v
+                                 for d, v in (row.get("label_versions") or {}).items()):
+            out.append({"id": row["id"], "stale": True})
+            continue
+        got = await review.check(r, a, b, labels)
+        out.append({"id": row["id"], "expect": row["expect"], "got": got["status"],
+                    # kept so a wrong category can be read against what was quoted
+                    "reason": got["reason"], "quotes": got["quotes"]})
+    return {"config": {"llm": r.cfg.llm, "prompt": review.PROMPT}, "rows": out,
+            "summary": pair_summary(out)}
+
+
+def pair_summary(rows: list[dict]) -> dict:
+    live = [r for r in rows if not r.get("stale")]
+    rank = review.CATEGORIES.index
+    severe = [r for r in live if r["expect"] in review.CATEGORIES[:2]]
+    stated = [r for r in live if r["expect"] != review.CATEGORIES[3]]
+    return {"pairs": len(live), "stale": len(rows) - len(live),
+            "agree": sum(r["got"] == r["expect"] for r in live),
+            # a "nothing stated" row agrees by construction: the same search wrote
+            # the key. These two leave those rows out.
+            "stated_pairs": len(stated),
+            "stated_agree": sum(r["got"] == r["expect"] for r in stated),
+            "severe_pairs": len(severe),
+            # the target is none: manual review is not milder, a lower category is
+            "severe_placed_milder": sum(r["got"] in review.CATEGORIES
+                                        and rank(r["got"]) > rank(r["expect"]) for r in severe),
+            # what the strict checks cost in coverage
+            "manual_review": sum(r["got"] == review.MANUAL for r in live)}

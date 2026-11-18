@@ -48,6 +48,17 @@ DEFAULTS = {
     # week 10: signs the API's bearer tokens. Empty on purpose -- there is no
     # default secret to leak; serve.py generates a per-process one and says so.
     "PHARMACLI_JWT_SECRET": "",
+    # patient profiles, accounts and the audit trail: a SQLite file of its own,
+    # never the DVC-tracked price panel above. Synthetic patients only.
+    "PHARMACLI_PATIENT_DB": "patients.db",
+    # scrypt cost N for password hashes, at r=8, p=1. 2^17 is the OWASP minimum;
+    # it is a setting so the tests can use a cheap one.
+    "PHARMACLI_SCRYPT_N": "131072",
+    # how long a sign-in lasts: one working shift
+    "PHARMACLI_SESSION_HOURS": "8",
+    # this many wrong passwords for one name inside the window lock it for the window
+    "PHARMACLI_LOCK_AFTER": "5",
+    "PHARMACLI_LOCK_MINUTES": "15",
 }
 
 
@@ -80,6 +91,11 @@ class Config:
     k: int
     relevance_floor: float
     jwt_secret: str
+    patient_db: str
+    scrypt_n: int
+    session_hours: float
+    lock_after: int
+    lock_minutes: float
 
 
 # builds config file that the code uses
@@ -99,4 +115,9 @@ def load() -> Config:
         k=num("PHARMACLI_K", int),
         relevance_floor=num("PHARMACLI_RELEVANCE_FLOOR", float),
         jwt_secret=get("PHARMACLI_JWT_SECRET"),
+        patient_db=get("PHARMACLI_PATIENT_DB"),
+        scrypt_n=num("PHARMACLI_SCRYPT_N", int),
+        session_hours=num("PHARMACLI_SESSION_HOURS", float),
+        lock_after=num("PHARMACLI_LOCK_AFTER", int),
+        lock_minutes=num("PHARMACLI_LOCK_MINUTES", float),
     )

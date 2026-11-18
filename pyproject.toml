@@ -22,9 +22,11 @@ pharmacli = "pharmacli.cli:main"
 where = ["src"]
 include = ["pharmacli*"]
 
-# chat.html is the browser page `pharmacli chat` serves; it ships with the module
+# the browser pages the API serves, the token stylesheet they link and their
+# scripts; they ship with the module. A file missing from this list works from
+# a checkout and is absent from the built image.
 [tool.setuptools.package-data]
-pharmacli = ["*.html"]
+pharmacli = ["*.html", "*.css", "*.js"]
 
 # analysis: pip install -e ".[analysis]"
 [project.optional-dependencies]

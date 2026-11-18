@@ -95,5 +95,12 @@ jobs:
                   assert d["ndcs"] > 0, d
                   print(f"smoke ok: {d['model']} over {d['ndcs']} NDCs")
                   EOF
+                  # every page, the stylesheet and each script: a static file
+                  # missing from the package data works from a checkout and is
+                  # absent from the image, so ask the image for each one
+                  for path in /chat /login /pharmacist /patient /static/theme.css \
+                              /static/app.js /static/pharmacist.js /static/patient.js; do
+                      curl -sf -o /dev/null "localhost:8000$path" || { echo "not in the image: $path"; exit 1; }
+                  done
                   docker logs api
                   docker rm -f api

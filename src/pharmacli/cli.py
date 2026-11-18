@@ -816,8 +816,9 @@ def cmdchat(args: argparse.Namespace) -> int:
     if args.db:
         os.environ["PHARMACLI_DB"] = args.db      # the routes read it from config
     # the token rides in the fragment, so it reaches the page without ever being
-    # sent to the server or landing in a log
-    url = f"http://127.0.0.1:{args.port}/chat#token={issue('chat')}"
+    # sent to the server or landing in a log. A working day long: the API's
+    # 1-hour default left a tab open past lunch answering every question with 401
+    url = f"http://127.0.0.1:{args.port}/chat#token={issue('chat', ttl=12 * 3600)}"
     print(f"pharmacli chat on {url}   (ctrl-c to stop)")
 
     def open_when_up() -> None:
@@ -856,7 +857,11 @@ def cmdask(args: argparse.Namespace) -> int:
           ((n, getattr(args, n, None)) for n in
            ("ndc", "phrase"))
           if v is not None}
-    label, lines = _ask.answer(args.question, db=args.db, **kw)
+    label, lines, chips = _ask.answer(args.question, db=args.db, **kw)
+    if not label:            # no match: what came close, then all it can answer
+        if chips:
+            lines += ["", "did you mean:"] + [f"  {c['q']}" for c in chips]
+        lines += _ask.menu()
     print("\n".join([f"· {label}", ""] + lines if label else lines))
     return EXIT_OK
 
@@ -962,10 +967,25 @@ def _docs_eval(args: argparse.Namespace) -> int:
         return EXIT_OK
     config = load()
     try:
-        rows = rageval.load_rows(args.qa)
+        rows = rageval.load_rows(args.pairs or args.qa)
     except (OSError, ValueError) as exc:
-        log.error("cannot read %s: %s", args.qa, exc)
+        log.error("cannot read %s: %s", args.pairs or args.qa, exc)
         return EXIT_BADIN
+
+    if args.pairs:
+        from pharmacli import docs, review
+
+        async def pairs() -> dict:
+            async with rag.session() as r:
+                return await rageval.run_pairs(
+                    r, rows, review.Labels(r.corpus, docs.load_classes()))
+
+        result = asyncio.run(pairs())
+        print(f"\n{len(rows)} pairs, {result['config']['llm']}")
+        for key, value in result["summary"].items():
+            print(f"  {key:<22} {value}")
+        _dump(args, result)
+        return EXIT_OK
 
     async def go() -> dict:
         async with rag.session() as r:
@@ -1027,8 +1047,28 @@ def _docs_handout(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _docs_classes(args: argparse.Namespace) -> int:
+    import json
+
+    from pharmacli import docs
+
+    # only drugs not yet on file are looked up, so this resumes and costs
+    # nothing to run again
+    found = docs.classes(docs.load_corpus(), docs.load_classes())
+    Path(docs.CLASSES).write_text(json.dumps(found, indent=1, sort_keys=True) + "\n",
+                                  encoding="utf-8")
+    without = sorted(k for k, d in found["drugs"].items()
+                     if not d["pharm_class"] and not d.get("terms"))
+    print(f"{len(found['drugs'])} drugs in {docs.CLASSES}, {len(without)} with no class on file"
+          + (f": {', '.join(without)}" if without else ""))
+    print("provisional: a pharmacist has not reviewed these terms" if not found.get("reviewed")
+          else "reviewed")
+    return EXIT_OK
+
+
 DOCS = {"fetch": _docs_fetch, "ingest": _docs_ingest, "refresh": _docs_ingest,
-        "eval": _docs_eval, "appeal": _docs_appeal, "handout": _docs_handout}
+        "eval": _docs_eval, "appeal": _docs_appeal, "handout": _docs_handout,
+        "classes": _docs_classes}
 
 
 def cmddocs(args: argparse.Namespace) -> int:
@@ -1121,9 +1161,28 @@ def cmdinteractions(args: argparse.Namespace) -> int:
         async with rag.session() as r:
             async for line in safety.interactions(r, args.drugs):
                 print(line, flush=True)            # a pair at a time, not all at the end
+            if not args.category:
+                return
+            # the same check a patient's report uses: one category from a closed
+            # set, resting on a sentence copied out of the label
+            import itertools
+
+            from pharmacli import review
+
+            labels = review.Labels(r.corpus, docs.load_classes())
+            known = review.drugs(r.corpus)
+            keys = dict.fromkeys(k for k in (review.match(d, r.corpus) for d in args.drugs) if k)
+            print("\ncategories (provisional: the class terms are not reviewed)")
+            for a, b in itertools.combinations(keys, 2):
+                got = await review.check(r, known[a], known[b], labels)
+                print("\n".join(review.item_lines(review.pair_item(known[a], known[b], got))),
+                      flush=True)
 
     try:
         asyncio.run(go())
+    except LookupError as exc:                     # a label PDF is not on disk
+        log.error("%s", exc)
+        return EXIT_BADIN
     except (OSError, ValueError) as exc:
         log.error("cannot read %s: %s", docs.CORPUS, exc)
         return EXIT_BADIN
@@ -1144,6 +1203,139 @@ def cmdtoken(args: argparse.Namespace) -> int:
 
     print(issue(args.sub, args.ttl))
     return EXIT_OK
+
+
+# ── patient profiles ─────────────────────────────────────────────────────────
+# Accounts and records are plain sqlite3 and hashlib, so these run on the core
+# install. Nothing here logs a name, a date of birth or a password.
+
+def _patients_account(args: argparse.Namespace, conn) -> int:
+    import getpass
+
+    from pharmacli import patients
+
+    if not args.target:
+        log.error("usage: pharmacli patients account USERNAME")
+        return EXIT_BADIN
+    # read without echo, never taken as an argument: a password on the command
+    # line lands in the shell history and in `ps`
+    first = getpass.getpass(f"password for {args.target} "
+                            f"(at least {patients.MIN_PASSWORD} characters): ")
+    if first != getpass.getpass("again: "):
+        log.error("the two passwords differ")
+        return EXIT_BADIN
+    try:
+        name = patients.add_account(conn, args.target, first, "pharmacist", load().scrypt_n)
+    except ValueError as exc:
+        log.error("%s", exc)
+        return EXIT_BADIN
+    print(f"pharmacist account {name} created")
+    return EXIT_OK
+
+
+def _patients_mock(args: argparse.Namespace, conn) -> int:
+    from pharmacli import docs, patients, review
+
+    try:
+        corpus = docs.load_corpus()
+    except (OSError, ValueError) as exc:
+        log.error("cannot read %s: %s", docs.CORPUS, exc)
+        return EXIT_BADIN
+    # the generated CSV goes through the same reader and loader as an upload,
+    # so the mock patients prove that path instead of going around it
+    text = patients.mock_csv(review.labeled(corpus))
+    if args.out:
+        Path(args.out).write_text(text, encoding="utf-8")
+    rows, rejected = patients.read_rows(text)
+    result = patients.load(conn, rows, "cli")
+    for line, why in rejected + result["rejected"]:
+        log.warning("line %d: %s", line, why)
+    print(f"{len(result['created'])} mock patients created, {len(result['updated'])} updated"
+          + (f", CSV -> {args.out}" if args.out else ""))
+    print("synthetic patients only: nothing here describes a real person")
+    return EXIT_OK
+
+
+def _patients_list(args: argparse.Namespace, conn) -> int:
+    from pharmacli import patients
+
+    listed = patients.roster(conn)
+    for p in listed:
+        print(f"{p['id']}  {p['name']:<24} {p['dob']}  {p['drugs']} drugs")
+    print(f"{len(listed)} patients")
+    return EXIT_OK
+
+
+def _patients_report(args: argparse.Namespace, conn) -> int:
+    from pharmacli import docs, review
+
+    if not args.target:
+        log.error("usage: pharmacli patients report ID   (ids: pharmacli patients list)")
+        return EXIT_BADIN
+    config = load()
+    try:
+        labels = review.Labels(docs.load_corpus(), docs.load_classes())
+    except (OSError, ValueError) as exc:
+        log.error("cannot read %s: %s", docs.CORPUS, exc)
+        return EXIT_BADIN
+    rep = review.report(conn, args.target, labels, config.llm, config.db)
+    if rep is None:
+        log.error("no patient with that id -- pharmacli patients list")
+        return EXIT_NOROWS
+    print("\n".join(review.report_lines(rep)))
+    # the number the "under a minute once cached" target is read from
+    print(f"\nreport built in {rep['ms'] / 1000:.2f} s from the cache ({rep['summary']})")
+    return EXIT_OK
+
+
+def _patients_warm(args: argparse.Namespace, conn) -> int:
+    import httpx
+
+    from pharmacli import docs, rag, review
+
+    config = load()
+
+    async def go() -> int:
+        async with rag.session() as r:
+            labels = review.Labels(r.corpus, docs.load_classes())
+            todo = len(review.pending(conn, labels, config.llm))
+            # one pair at a time on a CPU: this is the command to leave running
+            # overnight. Each answer is stored as it lands, so stopping it loses
+            # nothing and running it again carries on.
+            print(f"{todo} pairs to check with {config.llm}", flush=True)
+            return await review.work(
+                r, config.patient_db, labels,
+                progress=lambda a, b, got, left: print(
+                    f"  {a.name} + {b.name}: {got['status']}   ({left} left)", flush=True))
+
+    start = time.perf_counter()
+    try:
+        done = asyncio.run(go())
+    except (OSError, ValueError) as exc:
+        log.error("cannot read %s: %s", docs.CORPUS, exc)
+        return EXIT_BADIN
+    except httpx.HTTPError as exc:
+        log.error("the pair checks need Ollama -- docker compose up -d ollama (%s). "
+                  "Run this again to carry on.", exc)
+        return EXIT_NETWORK
+    except KeyboardInterrupt:
+        log.warning("interrupted: what was checked is kept, run this again to carry on")
+        return EXIT_NETWORK
+    took = time.perf_counter() - start
+    print(f"{done} pairs checked in {took / 60:.1f} minutes"
+          + (f" ({took / done:.0f} s a pair)" if done else ""))
+    return EXIT_OK
+
+
+PATIENTS = {"account": _patients_account, "mock": _patients_mock, "list": _patients_list,
+            "report": _patients_report, "warm": _patients_warm}
+
+
+def cmdpatients(args: argparse.Namespace) -> int:
+    from pharmacli import patients
+
+    with closing(patients.connect(load().patient_db)) as conn:
+        return PATIENTS[args.action](args, conn)
 
 
 HANDLERS = {
@@ -1169,6 +1361,7 @@ HANDLERS = {
     "recalls":  cmdrecalls,
     "interactions": cmdinteractions,
     "token":    cmdtoken,
+    "patients": cmdpatients,
 }
 
 

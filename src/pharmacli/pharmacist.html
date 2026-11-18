@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Pharmacist · PharmaCLI</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="/static/theme.css">
+<script src="/static/app.js" defer></script>
+<script src="/static/pharmacist.js" defer></script>
+</head><body><main class="page">
+<header class="top">
+  <h1>PharmaCLI · pharmacist</h1>
+  <p id="rate" class="muted"></p>
+  <button id="signout" type="button">Sign out</button>
+</header>
+<p class="notice" role="note"><strong>Synthetic patients only.</strong> This build is not
+   ready to hold real patient information. Do not enter a real person's details.</p>
+<datalist id="names"></datalist>
+
+<!-- the new-patient bar: on screen whatever else is open, and usable by keyboard alone -->
+<section class="card" aria-labelledby="new-h">
+  <h2 id="new-h">New patient</h2>
+  <form id="new" novalidate>
+    <div class="grid">
+      <div class="field">
+        <label for="n-name">Name</label>
+        <input id="n-name" autocomplete="off" required aria-describedby="n-name-e">
+        <p id="n-name-e" class="error" role="alert"></p>
+      </div>
+      <div class="field">
+        <label for="n-dob">Date of birth</label>
+        <input id="n-dob" type="date" required aria-describedby="n-dob-e">
+        <p id="n-dob-e" class="error" role="alert"></p>
+      </div>
+      <div class="field">
+        <label for="n-drugs">Current drugs: press Enter after each</label>
+        <input id="n-drugs" list="names" autocomplete="off" maxlength="80"
+               aria-describedby="n-drugs-e n-flag">
+        <p id="n-drugs-e" class="error" role="alert"></p>
+      </div>
+    </div>
+    <p id="n-flag" class="flag" role="status"></p>
+    <ul id="n-list" class="plain" aria-label="Drugs to save"></ul>
+    <details>
+      <summary>Indicators (optional)</summary>
+      <div id="n-indicators" class="grid"></div>
+    </details>
+    <p id="n-error" class="error" role="alert"></p>
+    <div class="row">
+      <button class="primary" type="submit">Save patient</button>
+      <button id="n-confirm" type="button" hidden>Save as a second record</button>
+    </div>
+  </form>
+</section>
+
+<div class="cols">
+<section class="card" aria-labelledby="list-h">
+  <h2 id="list-h">Patients</h2>
+  <div class="row">
+    <label for="file">Upload a CSV, one row per patient</label>
+    <input id="file" type="file" accept=".csv,text/csv">
+  </div>
+  <div class="row">
+    <a href="/static/template.csv" download="patients-template.csv">Download the template</a>
+    <button id="mock" type="button">Load the 25 mock patients</button>
+  </div>
+  <div id="uploaded" role="status"></div>
+  <ul id="patients" class="plain"></ul>
+  <h3>Questions from patients</h3>
+  <ul id="questions" class="plain"></ul>
+</section>
+<section id="profile" class="card" aria-labelledby="profile-h" hidden>
+  <h2 id="profile-h" tabindex="-1"></h2>
+  <p id="profile-error" class="error" role="alert"></p>
+  <div id="profile-body"></div>
+  <div id="report" aria-live="polite"></div>
+</section>
+</div>
+</main></body></html>

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Sign in · PharmaCLI</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="/static/theme.css">
+<script src="/static/app.js" defer></script>
+</head><body><main class="narrow">
+<h1>PharmaCLI</h1>
+<p class="muted">Sign in as a pharmacist or as a patient. This build holds
+   synthetic patients only.</p>
+<form id="signin" class="stack">
+  <label for="username">Username</label>
+  <input id="username" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus>
+  <label for="password">Password</label>
+  <input id="password" type="password" autocomplete="current-password" required>
+  <p id="signin-error" class="error" role="alert"></p>
+  <button class="primary" type="submit">Sign in</button>
+</form>
+<form id="change" class="stack" hidden>
+  <h2>Choose your own password</h2>
+  <p class="muted">The password you were given works once. Pick one only you know,
+     at least 12 characters long.</p>
+  <label for="who" hidden>Username</label>
+  <input id="who" autocomplete="username" hidden>
+  <label for="new">New password</label>
+  <input id="new" type="password" autocomplete="new-password" minlength="12" required>
+  <label for="again">New password, again</label>
+  <input id="again" type="password" autocomplete="new-password" minlength="12" required>
+  <p id="change-error" class="error" role="alert"></p>
+  <button class="primary" type="submit">Save and continue</button>
+</form>
+</main></body></html>

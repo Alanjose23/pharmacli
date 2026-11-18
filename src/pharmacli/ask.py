@@ -4,7 +4,6 @@ import inspect
 import logging
 import pathlib
 import re
-import sys
 from collections.abc import Callable
 from contextlib import closing
 
@@ -145,7 +144,7 @@ def _drug(db, ndc: str):
     return d, cost, qty, age
 
 
-NOT_FOUND = "{} is not in the panel. `pharmacli ask` -> find a drug by description"
+NOT_FOUND = "{} is not in the panel -- try: find a drug by description"
 
 
 def drug_info(db=None, ndc="") -> list[str]:
@@ -397,6 +396,9 @@ QUESTIONS: list[tuple[str, Callable[..., list[str]], dict]] = [
     ("what changed since my saved shelf",   shelf_changes,    {}),
 ]
 
+# the questions about one drug: each answer offers the others for the same NDC
+DRUG = [label for label, _, schema in QUESTIONS if "ndc" in schema]
+
 
 # One CSV column group per per-drug chat question, in the order the chat asks
 # them. Values, not the chat's formatted lines: a CSV gets sorted and filtered.
@@ -493,7 +495,11 @@ def match(question: str) -> list[tuple[float, str, Callable[..., list[str]], dic
         score = (len(hit) / len(lw) if lw and hit else 0.0)
         score += difflib.SequenceMatcher(None, question.lower(), label).ratio() * 0.01
         ranked.append((score, label, fn, schema))
-    return sorted(ranked, reverse=True, key=lambda x: x[0])
+    # The cutoff decides WHETHER a label matched; among those that did, the one
+    # sharing the most words wins. By score alone "what is this drug" takes 1.0
+    # on "drug" and beats "find a drug by description" for "find a drug ...".
+    return sorted(ranked, reverse=True,
+                  key=lambda x: (x[0] >= CUTOFF, len(qw & _key(x[1])), x[0]))
 
 
 CUTOFF = 0.45
@@ -509,8 +515,32 @@ def args_from(q: str, label: str) -> dict:
         kw["ndc"] = re.sub(r"\D", "", m.group())
     lab = {w.lower() for w in label.split()}
     rest = " ".join(w for w in q.split() if w.lower() not in lab).strip()
-    kw["phrase"] = rest or q
+    if rest:
+        kw["phrase"] = rest
     return kw
+
+
+# A drug named in words -> (ndc, description), from the newest file: the names
+# holding the most of the phrase's words, stocked ones first, one NDC per name.
+# A shelf can stock 178 NDCs of one atorvastatin, so the name picks your busiest.
+def resolve_drug(db, phrase: str, shelf=None) -> list[tuple[str, str]]:
+    from pharmacli.store import connect, newest_week, stock
+
+    terms = [t for t in re.findall(r"[a-z]{2,}|\d+", phrase.lower()) if t not in _STOP]
+    if not terms:
+        return []
+    hits = " + ".join(["(description LIKE ?)"] * len(terms))
+    with closing(connect(db or load().db)) as conn:
+        rows = conn.execute(f"SELECT ndc, description, {hits} AS h FROM nadac"
+                            " WHERE as_of_date = ? AND h > 0 ORDER BY h DESC",
+                            [f"%{t}%" for t in terms] + [newest_week(conn)]).fetchall()
+        qty = shelf[1] if shelf else stock(conn)
+    rows = [r for r in rows if r[2] == rows[0][2]] if rows else []
+    rows = [r for r in rows if r[0] in qty] or rows
+    busiest: dict[str, str] = {}
+    for ndc, desc, _ in sorted(rows, key=lambda r: qty.get(r[0], (0, 0))[1] or 0):
+        busiest[desc] = ndc
+    return [(n, d) for d, n in sorted(busiest.items())]
 
 
 def lane(question: str) -> str:
@@ -528,12 +558,14 @@ def lane(question: str) -> str:
     return "price"
 
 
-def _no_match(question: str, ranked: list) -> list[str]:
-    near = [lab for s, lab, _, _ in ranked[:3] if s > 0.2]   # real matches only
-    out = [f"no question matches {question!r}."]
-    if near:
-        out += ["", "did you mean:"] + [f"  {lab}" for lab in near]
-    return out + menu()
+# A chip is a question the browser can ask with one click. One that takes a
+# drug ("fill") goes into the box to wait for it instead of being sent bare.
+def chip(label: str, schema: dict) -> dict:
+    return {"q": label, "fill": bool(schema)}
+
+
+def near(ranked: list) -> list[dict]:
+    return [chip(lab, schema) for s, lab, _, schema in ranked[:3] if s > 0.2]   # real matches only
 
 
 def _documents(question: str) -> list[str] | None:
@@ -554,35 +586,48 @@ DOCUMENTS_DOWN = ("answers from package inserts and reimbursement documents"
                    " are unavailable right now -- docker compose up -d chroma ollama")
 
 
-def answer(question: str, db=None, shelf=None, **kw) -> tuple[str, list[str]]:
+# -> (label, lines, chips). Never reads stdin: `pharmacli chat` runs the server
+# in a terminal, and an input() there hung the browser until someone typed.
+def answer(question: str, db=None, shelf=None, **kw) -> tuple[str, list[str], list[dict]]:
     ranked = match(question)
     score, label, fn, schema = ranked[0]
     if lane(question) == "documents":
         got = _documents(question)
         if got is not None:
-            return "documents", got
-        out = _no_match(question, ranked)
-        out.insert(1, DOCUMENTS_DOWN)
-        return "", out
+            return "documents", got, []
+        return "", [f"no question matches {question!r}.", DOCUMENTS_DOWN], near(ranked)
 
-    # only ask for the args this question actually needs
-    args = {}
+    # the sentence carries the drug; a --ndc / --phrase flag overrides it
+    kw = args_from(question, label) | {k: v for k, v in kw.items() if v not in (None, "")}
+    args, matched = {}, []
     for name, cast in schema.items():
         val = kw.get(name)
+        if name == "ndc" and not val and kw.get("phrase"):
+            phrase = kw["phrase"]
+            found = resolve_drug(db, phrase, shelf)
+            if not found:
+                return label, [NOT_FOUND.format(repr(phrase))], \
+                    [{"q": f"find a drug by description {phrase}"}]
+            if len(found) > 1:
+                return label, ([f"{len(found)} drugs match {phrase!r} -- which one?"]
+                               + [f"  {d}   {n}" for n, d in found[:8]]), \
+                    [{"q": f"{label} {n}", "label": d} for n, d in found[:8]]
+            val = found[0][0]
+            matched = [f"matched {phrase!r} -> {val}"]
         if val in (None, ""):
             # a drug question genuinely cannot proceed without the drug; a
             # "top 3" style knob can, so it falls through to the callee.
             if cast is not str:
                 continue
-            if not sys.stdin.isatty():
-                return label, [f"{label!r} needs --{name.replace('_', '-')}"]
-            val = input(f"{name}? ").strip()
-        if val not in (None, ""):
-            args[name] = cast(val)
+            return label, [f'which drug? add its name or NDC: "{label} atorvastatin"'], []
+        args[name] = cast(val)
     # an uploaded CSV answers only the questions that read the shelf
     if shelf and "shelf" in inspect.signature(fn).parameters:
         args["shelf"] = shelf
     body = fn(db=db, **args)
     while body and not body[0]:          # sections bring their own leading blank
         body.pop(0)
-    return label, body
+    chips = []
+    if label in DRUG and body != [NOT_FOUND.format(args["ndc"])]:
+        chips = [{"q": f"{lab} {args['ndc']}", "label": lab} for lab in DRUG if lab != label]
+    return label, matched + body, chips

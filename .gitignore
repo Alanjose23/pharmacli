@@ -278,3 +278,8 @@ runs/
 data/docs/
 
 data/qa-src/
+
+# Patient profiles, accounts and the audit trail (PHARMACLI_PATIENT_DB). Its own
+# file precisely so it never travels with the DVC-tracked price panel; it is not
+# committed, not in DVC and not in the image. Synthetic patients only.
+patients.db

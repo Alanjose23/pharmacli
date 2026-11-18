@@ -1,5 +1,6 @@
 import argparse
 
+import pytest
 from conftest import row
 
 from pharmacli import ask
@@ -101,7 +102,7 @@ def tdocumentquestionsleavethepricelane():
 def tdocumentslanehandsofftorag(monkeypatch):
     monkeypatch.setattr(ask, "_documents", lambda q: ["Avoid below eGFR 30 [1].", "", "[1] X"])
     assert ask.answer("what are the contraindications for this drug") == (
-        "documents", ["Avoid below eGFR 30 [1].", "", "[1] X"])
+        "documents", ["Avoid below eGFR 30 [1].", "", "[1] X"], [])
 
 
 def tdocumentslaneoutagesaysso(monkeypatch):
@@ -109,7 +110,7 @@ def tdocumentslaneoutagesaysso(monkeypatch):
     # not silently fall back to a plain "no question matches" -- the outage
     # has to say so, not look like an unrecognized question
     monkeypatch.setattr(ask, "_documents", lambda q: None)
-    label, lines = ask.answer("what is this drug dosage")
+    label, lines, _ = ask.answer("what is this drug dosage")
     assert label == ""
     assert lines[0].startswith("no question matches")
     assert lines[1] == ask.DOCUMENTS_DOWN
@@ -220,12 +221,12 @@ def tfinddrugworkswithoutthenlpmodule(tmp_path, monkeypatch):
 def tanswerusesthepassedshelfinsteadofthedatabase(tmp_path):
     db = shelf(tmp_path)
     # the saved shelf has SINKING at 1.50 against a NADAC price of 1.00
-    _, saved = ask.answer("what am I losing money on", db=db)
+    _, saved, _ = ask.answer("what am I losing money on", db=db)
     assert any("1 positions cost more than NADAC" in line for line in saved)
 
     # an uploaded file carrying only FINE, priced below NADAC, is clean
     upload = ({FINE: 1.00}, {FINE: (100.0, 200.0)})
-    _, uploaded = ask.answer("what am I losing money on", db=db, shelf=upload)
+    _, uploaded, _ = ask.answer("what am I losing money on", db=db, shelf=upload)
     assert any("nothing underwater" in line for line in uploaded)
 
 
@@ -275,3 +276,105 @@ def tsuggestionsskipemptylistsandnamerealquestions(tmp_path):
     got = ask.suggestions(db=db, shelf=({SINKING: 1.50}, {SINKING: (100.0, 200.0)}))
     assert got[0]["q"] == "what am I losing money on"
     assert "$" in got[0]["hint"]
+
+
+# ── drugs by name, and what to ask next ──────────────────────────────────────
+LIPITOR10, LIPITOR20 = "00071015523", "00071015623"
+ATOR_QUIET, ATOR_BUSY, ATOR10 = "00093505601", "00093505602", "00093505501"
+
+
+def named(tmp_path, drugs, stocked=()):
+    db = str(tmp_path / "n.db")
+    conn = connect(db)
+    insert(conn, [Medicine.arow(row(n, "1.00000", WEEK) | {"NDC Description": d}, i)
+                  for i, (n, d) in enumerate(drugs.items(), 1)])
+    watch_cost(conn, [(n, 1.0, 100.0, monthly) for n, monthly in stocked])
+    conn.close()
+    return db
+
+
+def tadrugquestionneverreadsthekeyboard(monkeypatch):
+    import builtins
+    import io
+    import sys
+
+    # `pharmacli chat` runs the server in a terminal: an input() there hangs
+    # the browser on "..." until someone types into the server's shell
+    class Tty(io.StringIO):
+        def isatty(self):
+            return True
+
+    monkeypatch.setattr(sys, "stdin", Tty())
+    monkeypatch.setattr(builtins, "input", lambda *a: pytest.fail("read the keyboard"))
+    label, lines, _ = ask.answer("what is this drug")
+    assert label == "what is this drug"
+    assert lines[0].startswith("which drug?")
+
+
+def tadrugnameresolvestoitsndc(tmp_path):
+    db = named(tmp_path, {LIPITOR10: "LIPITOR 10 MG TABLET",
+                          LIPITOR20: "LIPITOR 20 MG TABLET"})
+    label, lines, _ = ask.answer("what is this drug lipitor 20", db=db)
+    text = "\n".join(lines)
+    assert label == "what is this drug"
+    assert LIPITOR20 in text and LIPITOR10 not in text
+
+
+def tanamethatfitsseveraldrugsoffersthemall(tmp_path):
+    db = named(tmp_path, {LIPITOR10: "LIPITOR 10 MG TABLET",
+                          LIPITOR20: "LIPITOR 20 MG TABLET"})
+    label, lines, chips = ask.answer("what has lipitor's price done", db=db)
+    assert label == "what has this drug's price done"
+    assert "which one" in lines[0]
+    assert {c["q"] for c in chips} == {f"what has this drug's price done {LIPITOR10}",
+                                       f"what has this drug's price done {LIPITOR20}"}
+
+
+def tanunknownnameisnotinthepanel(tmp_path):
+    db = named(tmp_path, {LIPITOR10: "LIPITOR 10 MG TABLET"})
+    _, lines, _ = ask.answer("what is this drug zocor", db=db)
+    assert "not in the panel" in lines[0]
+
+
+def tanamepicksthebusiestndconyourshelf(tmp_path):
+    # the 10 MG is not stocked, so it is not a choice; of the two 20 MG
+    # positions, the one that moves 50 a month is the one you mean
+    db = named(tmp_path, {ATOR_QUIET: "ATORVASTATIN 20 MG TABLET",
+                          ATOR_BUSY: "ATORVASTATIN 20 MG TABLET",
+                          ATOR10: "ATORVASTATIN 10 MG TABLET"},
+               stocked=[(ATOR_QUIET, 10.0), (ATOR_BUSY, 50.0)])
+    _, lines, _ = ask.answer("when should I reorder atorvastatin", db=db)
+    text = "\n".join(lines)
+    assert ATOR_BUSY in text and ATOR_QUIET not in text and ATOR10 not in text
+
+
+def tadruganswerofferstheotherdrugquestions(tmp_path):
+    db = named(tmp_path, {LIPITOR10: "LIPITOR 10 MG TABLET"})
+    _, _, chips = ask.answer(f"what is this drug {LIPITOR10}", db=db)
+    assert {c["q"] for c in chips} == {f"what has this drug's price done {LIPITOR10}",
+                                       f"will this drug's price move {LIPITOR10}",
+                                       f"when should I reorder this drug {LIPITOR10}"}
+
+
+def tmostsharedwordsbeatashortlabel():
+    # "what is this drug" scores 1.0 on "drug" alone; "find" is the word that matters
+    assert ask.match("find a drug cholesterol pill")[0][1] == "find a drug by description"
+
+
+def tnomatchoffersnearquestionsthatwaitforadrug(monkeypatch):
+    monkeypatch.setattr(ask, "_documents", lambda q: None)
+    label, lines, chips = ask.answer("price history for atorvastatin")
+    assert label == ""
+    assert {"q": "what has this drug's price done", "fill": True} in chips
+    assert not any("pharmacli ask" in line for line in lines)   # the CLI menu is the CLI's
+
+
+def tclinomatchstillprintsthemenu(monkeypatch, capsys):
+    from pharmacli.cli import cmdask
+
+    monkeypatch.setattr(ask, "_documents", lambda q: None)
+    cmdask(argparse.Namespace(out=None, question="price history for atorvastatin",
+                              db=None, ndc=None, phrase=None))
+    out = capsys.readouterr().out
+    assert "did you mean" in out and "what has this drug's price done" in out
+    assert "what am I losing money on" in out

@@ -15,7 +15,9 @@ COPY --from=build /venv /venv
 # panel and the promoted model are mounted at run time, so no shelf data, no
 # acquisition costs and no secret are baked in
 WORKDIR /app
-COPY corpus.json ./
+# classes.json: how labels name each drug's class, read by the pair checks.
+# Reference data like corpus.json, with nothing about a patient in it.
+COPY corpus.json classes.json ./
 # the demo panel and the model trained on it (tests/make_demo.py, 2.1MB): what
 # makes /predict answer on a clean clone. The real panel and promoted model are
 # still mounted, never baked in.
@@ -27,7 +29,10 @@ COPY models/demo-mover.joblib models/demo-mover.json ./models/
 ENV PATH=/venv/bin:$PATH PYTHONUNBUFFERED=1 \
     PHARMACLI_DB=data/demo.db \
     PHARMACLI_MODEL=models/demo-mover.joblib
-RUN useradd --create-home --uid 1000 app && mkdir -p /app/data && chown -R app /app
+# /app/patients is where compose mounts the patient-data volume; it exists and
+# belongs to `app` here so the volume is writable by the non-root user
+RUN useradd --create-home --uid 1000 app && mkdir -p /app/data /app/patients \
+ && chown -R app /app
 USER app
 EXPOSE 8000
 # one worker: the panel is ~1GB in memory and Ollama is the bottleneck anyway,
